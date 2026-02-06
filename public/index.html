@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenClaw 配置助手</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 800px;
+            width: 100%;
+            padding: 40px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .header h1 {
+            color: #667eea;
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 16px;
+        }
+
+        .steps {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 40px;
+        }
+
+        .step {
+            display: flex;
+            align-items: center;
+            color: #ccc;
+        }
+
+        .step.active {
+            color: #667eea;
+        }
+
+        .step.completed {
+            color: #10b981;
+        }
+
+        .step-number {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: #e5e7eb;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+
+        .step.active .step-number {
+            background: #667eea;
+            color: white;
+        }
+
+        .step.completed .step-number {
+            background: #10b981;
+            color: white;
+        }
+
+        .step-divider {
+            width: 60px;
+            height: 2px;
+            background: #e5e7eb;
+            margin: 0 20px;
+        }
+
+        .content {
+            display: none;
+        }
+
+        .content.active {
+            display: block;
+        }
+
+        .form-group {
+            margin-bottom: 25px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #374151;
+            font-weight: 500;
+        }
+
+        .form-group select,
+        .form-group input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        .form-group select:focus,
+        .form-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .guide {
+            background: #f9fafb;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .guide h3 {
+            color: #374151;
+            margin-bottom: 15px;
+            font-size: 18px;
+        }
+
+        .guide-step {
+            margin-bottom: 20px;
+        }
+
+        .guide-step h4 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+
+        .guide-step p {
+            color: #6b7280;
+            line-height: 1.6;
+            margin-bottom: 10px;
+        }
+
+        .guide-image {
+            max-width: 100%;
+            border-radius: 8px;
+            margin-top: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .buttons {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 30px;
+        }
+
+        .btn {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #e5e7eb;
+            color: #374151;
+        }
+
+        .btn-secondary:hover {
+            background: #d1d5db;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .alert {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .alert.show {
+            display: block;
+        }
+
+        .alert-success {
+            background: #d1fae5;
+            color: #065f46;
+            border: 1px solid #10b981;
+        }
+
+        .alert-error {
+            background: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #ef4444;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .loading.show {
+            display: block;
+        }
+
+        .spinner {
+            border: 4px solid #f3f4f6;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .success-page {
+            text-align: center;
+            padding: 40px 0;
+        }
+
+        .success-icon {
+            width: 80px;
+            height: 80px;
+            background: #10b981;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 20px;
+            font-size: 40px;
+            color: white;
+        }
+
+        .success-page h2 {
+            color: #10b981;
+            margin-bottom: 15px;
+        }
+
+        .success-page p {
+            color: #6b7280;
+            line-height: 1.6;
+            margin-bottom: 10px;
+        }
+
+        .success-page .btn {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>OpenClaw 配置助手</h1>
+            <p>按照步骤完成模型和 Telegram 配置</p>
+        </div>
+
+        <div class="steps">
+            <div class="step active" id="step-indicator-1">
+                <div class="step-number">1</div>
+                <span>选择模型</span>
+            </div>
+            <div class="step-divider"></div>
+            <div class="step" id="step-indicator-2">
+                <div class="step-number">2</div>
+                <span>配置 Telegram</span>
+            </div>
+        </div>
+
+        <div class="alert alert-error" id="error-alert"></div>
+        <div class="alert alert-success" id="success-alert"></div>
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>正在配置中,请稍候...</p>
+        </div>
+
+        <!-- 步骤 1: 选择模型 -->
+        <div class="content active" id="step-1">
+            <h2 style="margin-bottom: 20px; color: #374151;">步骤 1: 选择模型</h2>
+            
+            <div class="form-group">
+                <label for="model-provider">选择模型提供商</label>
+                <select id="model-provider">
+                    <option value="">-- 请选择 --</option>
+                    <option value="minimax">MiniMax (需要 API Key)</option>
+                    <option value="gpt">GPT (通过 OAuth 登录)</option>
+                    <option value="qwen">千问 (通过 OAuth 登录)</option>
+                </select>
+            </div>
+
+            <div class="form-group" id="minimax-token-group" style="display: none;">
+                <label for="minimax-token">MiniMax API Key</label>
+                <input type="text" id="minimax-token" placeholder="请输入 MiniMax API Key">
+            </div>
+
+            <div class="buttons">
+                <button class="btn btn-secondary" disabled>上一步</button>
+                <button class="btn btn-primary" id="next-step-1" disabled>下一步</button>
+            </div>
+        </div>
+
+        <!-- 步骤 2: 配置 Telegram -->
+        <div class="content" id="step-2">
+            <h2 style="margin-bottom: 20px; color: #374151;">步骤 2: 配置 Telegram 机器人</h2>
+
+            <div class="guide">
+                <h3>配置指南</h3>
+
+                <div class="guide-step">
+                    <h4>1. 找到 BotFather</h4>
+                    <p>在 Telegram 中搜索 <strong>@BotFather</strong>,确认其名称旁边有蓝色认证标记。</p>
+                    <img src="./assets/image-1.png" alt="搜索 BotFather" class="guide-image">
+                    <p style="margin-top: 10px;">点击 <strong>Start</strong>(或输入 <code>/start</code>)。</p>
+                    <img src="./assets/image-2.png" alt="启动 BotFather" class="guide-image">
+                </div>
+
+                <div class="guide-step">
+                    <h4>2. 创建新机器人</h4>
+                    <p>在对话框中输入指令: <code>/newbot</code></p>
+                    <img src="./assets/image-3.png" alt="创建机器人" class="guide-image">
+                    <p style="margin-top: 10px;"><strong>设定名称 (Name)</strong>: 这是你的机器人显示的昵称(例如: My Assistant),可以随时更改。</p>
+                    <img src="./assets/image-4.png" alt="设置名称" class="guide-image">
+                    <p style="margin-top: 10px;"><strong>设定用户名 (Username)</strong>: 这是用户搜索你的机器人时使用的唯一 ID。必须以 <code>bot</code> 结尾(例如: my_assistant_2026_bot),且不能与他人重复。</p>
+                    <img src="./assets/image-5.png" alt="设置用户名" class="guide-image">
+                </div>
+
+                <div class="guide-step">
+                    <h4>3. 复制 Token</h4>
+                    <p>完成上述步骤后,BotFather 会发送一条包含 <strong>HTTP API Token</strong> 的消息。</p>
+                    <p>Token 的格式通常类似于: <code>123456789:ABCDefghIJKLmnopQRSTuvwxYZ</code></p>
+                    <p>直接点击该 Token 即可复制。</p>
+                    <img src="./assets/image-6.png" alt="复制 Token" class="guide-image">
+                </div>
+
+                <div class="guide-step">
+                    <h4>4. 绑定 TG 用户 ID</h4>
+                    <p>在 Telegram 搜索机器人 <strong>@username_to_id_bot</strong>,发送消息获取你的用户 ID。</p>
+                    <img src="./assets/image-7.png" alt="获取用户 ID" class="guide-image">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="tg-token">Telegram Bot Token</label>
+                <input type="text" id="tg-token" placeholder="请输入 Bot Token">
+            </div>
+
+            <div class="form-group">
+                <label for="tg-user-id">Telegram 用户 ID</label>
+                <input type="text" id="tg-user-id" placeholder="请输入用户 ID">
+            </div>
+
+            <div class="buttons">
+                <button class="btn btn-secondary" id="skip-tg">跳过</button>
+                <button class="btn btn-primary" id="next-step-2" disabled>完成配置</button>
+            </div>
+        </div>
+
+        <!-- 完成页面 -->
+        <div class="content" id="success">
+            <div class="success-page">
+                <div class="success-icon">✓</div>
+                <h2>配置完成!</h2>
+                <p>OpenClaw 已成功配置并启动。</p>
+                <p>您现在可以:</p>
+                <ul style="text-align: left; max-width: 400px; margin: 20px auto; color: #6b7280;">
+                    <li style="margin-bottom: 10px;">✓ 打开 OpenClaw Dashboard 开始使用</li>
+                    <li style="margin-bottom: 10px;">✓ 在 Telegram 中向您的机器人发送消息测试</li>
+                    <li>✓ 查看日志: <code>tail -f ~/.openclaw/logs/gateway.log</code></li>
+                </ul>
+                <button class="btn btn-primary" id="open-dashboard">打开 Dashboard</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentStep = 1;
+        let selectedProvider = null;
+        let minimaxToken = null;
+
+        // 步骤切换
+        function showStep(step) {
+            document.querySelectorAll('.content').forEach(el => el.classList.remove('active'));
+            document.getElementById(`step-${step}`).classList.add('active');
+
+            // 更新步骤指示器
+            for (let i = 1; i <= 2; i++) {
+                const indicator = document.getElementById(`step-indicator-${i}`);
+                indicator.classList.remove('active', 'completed');
+                if (i < step) {
+                    indicator.classList.add('completed');
+                } else if (i === step) {
+                    indicator.classList.add('active');
+                }
+            }
+
+            currentStep = step;
+        }
+
+        // 显示提示
+        function showAlert(type, message) {
+            const alert = document.getElementById(type === 'error' ? 'error-alert' : 'success-alert');
+            alert.textContent = message;
+            alert.classList.add('show');
+            setTimeout(() => alert.classList.remove('show'), 5000);
+        }
+
+        // 显示/隐藏加载
+        function showLoading(show) {
+            document.getElementById('loading').classList.toggle('show', show);
+        }
+
+        // 步骤 1: 模型选择
+        const providerSelect = document.getElementById('model-provider');
+        const minimaxTokenGroup = document.getElementById('minimax-token-group');
+        const minimaxTokenInput = document.getElementById('minimax-token');
+        const nextStep1Btn = document.getElementById('next-step-1');
+
+        providerSelect.addEventListener('change', (e) => {
+            selectedProvider = e.target.value;
+            
+            if (selectedProvider === 'minimax') {
+                minimaxTokenGroup.style.display = 'block';
+                nextStep1Btn.disabled = !minimaxTokenInput.value;
+            } else if (selectedProvider) {
+                minimaxTokenGroup.style.display = 'none';
+                nextStep1Btn.disabled = false;
+            } else {
+                minimaxTokenGroup.style.display = 'none';
+                nextStep1Btn.disabled = true;
+            }
+        });
+
+        minimaxTokenInput.addEventListener('input', (e) => {
+            minimaxToken = e.target.value;
+            nextStep1Btn.disabled = !minimaxToken;
+        });
+
+        nextStep1Btn.addEventListener('click', async () => {
+            if (!selectedProvider) {
+                showAlert('error', '请选择模型提供商');
+                return;
+            }
+
+            if (selectedProvider === 'minimax' && !minimaxToken) {
+                showAlert('error', '请输入 MiniMax API Key');
+                return;
+            }
+
+            showLoading(true);
+
+            try {
+                const response = await fetch('/api/config/model', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        provider: selectedProvider,
+                        token: minimaxToken
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    showAlert('success', '模型配置成功!');
+                    setTimeout(() => showStep(2), 1000);
+                } else {
+                    showAlert('error', result.error || '配置失败');
+                }
+            } catch (error) {
+                showAlert('error', '网络错误: ' + error.message);
+            } finally {
+                showLoading(false);
+            }
+        });
+
+        // 步骤 2: Telegram 配置
+        const tgTokenInput = document.getElementById('tg-token');
+        const tgUserIdInput = document.getElementById('tg-user-id');
+        const nextStep2Btn = document.getElementById('next-step-2');
+        const skipTgBtn = document.getElementById('skip-tg');
+
+        function checkTgInputs() {
+            nextStep2Btn.disabled = !tgTokenInput.value || !tgUserIdInput.value;
+        }
+
+        tgTokenInput.addEventListener('input', checkTgInputs);
+        tgUserIdInput.addEventListener('input', checkTgInputs);
+
+        skipTgBtn.addEventListener('click', async () => {
+            showLoading(true);
+
+            try {
+                const response = await fetch('/api/config/telegram', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ skip: true })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    showAlert('success', '已跳过 Telegram 配置');
+                    setTimeout(() => showStep('success'), 1000);
+                } else {
+                    showAlert('error', result.error || '操作失败');
+                }
+            } catch (error) {
+                showAlert('error', '网络错误: ' + error.message);
+            } finally {
+                showLoading(false);
+            }
+        });
+
+        nextStep2Btn.addEventListener('click', async () => {
+            const token = tgTokenInput.value.trim();
+            const userId = tgUserIdInput.value.trim();
+
+            if (!token || !userId) {
+                showAlert('error', '请填写所有必填项');
+                return;
+            }
+
+            showLoading(true);
+
+            try {
+                const response = await fetch('/api/config/telegram', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token, userId })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    showAlert('success', 'Telegram 配置成功!');
+                    setTimeout(() => showStep('success'), 1000);
+                } else {
+                    showAlert('error', result.error || '配置失败');
+                }
+            } catch (error) {
+                showAlert('error', '网络错误: ' + error.message);
+            } finally {
+                showLoading(false);
+            }
+        });
+
+        // 打开 Dashboard
+        document.getElementById('open-dashboard').addEventListener('click', async () => {
+            try {
+                const response = await fetch('/api/config/status');
+                const result = await response.json();
+
+                if (result.success && result.data.gatewayRunning) {
+                    window.open('http://127.0.0.1:18789', '_blank');
+                } else {
+                    showAlert('error', 'Gateway 未运行,请先启动 Gateway');
+                }
+            } catch (error) {
+                window.open('http://127.0.0.1:18789', '_blank');
+            }
+        });
+
+        // 初始化
+        showStep(1);
+    </script>
+</body>
+</html>
