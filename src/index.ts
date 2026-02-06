@@ -1,11 +1,15 @@
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
+import { cors } from 'hono/cors';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { configRouter } from './routes/config.js';
 import { WebSocketServer } from 'ws';
 import { createServer } from 'http';
 
 const app = new Hono();
+
+// CORS 支持
+app.use('/*', cors());
 
 // 静态文件服务
 app.use('/assets/*', serveStatic({ root: './public' }));
