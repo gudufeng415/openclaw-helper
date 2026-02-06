@@ -248,7 +248,23 @@ uninstall_old_version() {
 # 安装 openclaw
 install_openclaw() {
     print_info "开始安装 openclaw..."
-    
+
+    if command_exists openclaw; then
+        CURRENT_VERSION=$(openclaw --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+(-[0-9]+)?' | head -n 1)
+        LATEST_VERSION=$(npm view openclaw version 2>/dev/null || echo "")
+
+        if [ -n "$CURRENT_VERSION" ] && [ -n "$LATEST_VERSION" ]; then
+            if [ "$CURRENT_VERSION" = "$LATEST_VERSION" ]; then
+                print_info "✓ openclaw 已是最新版本: $CURRENT_VERSION"
+                return 0
+            else
+                print_info "检测到新版本: $CURRENT_VERSION -> $LATEST_VERSION,开始升级..."
+            fi
+        else
+            print_warning "无法获取最新版本信息,继续安装..."
+        fi
+    fi
+
     npm install -g openclaw@latest
     
     if command_exists openclaw; then
@@ -583,7 +599,7 @@ start_gateway() {
     fi
 }
 
-# 打开 Dashboard
+# 打开 Dashboard 与 Helper
 open_dashboard() {
     print_info "准备打开 Dashboard..."
     
@@ -596,11 +612,16 @@ open_dashboard() {
     fi
     
     DASHBOARD_URL="http://127.0.0.1:18789?token=${CURRENT_TOKEN}"
+    HELPER_URL="http://127.0.0.1:17543"
     
     echo "================================================"
     echo -e "${GREEN}🌐 Dashboard 访问地址:${NC}"
     echo ""
     echo "$DASHBOARD_URL"
+    echo ""
+    echo -e "${GREEN}🌐 OpenClaw Helper 访问地址:${NC}"
+    echo ""
+    echo "$HELPER_URL"
     echo ""
     
     # 检查 gateway 是否真的在运行
@@ -620,16 +641,19 @@ open_dashboard() {
         if open "$DASHBOARD_URL" 2>/dev/null; then
             BROWSER_OPENED=true
         fi
+        open "$HELPER_URL" 2>/dev/null || true
     elif command -v xdg-open >/dev/null 2>&1; then
         # Linux
         if xdg-open "$DASHBOARD_URL" 2>/dev/null; then
             BROWSER_OPENED=true
         fi
+        xdg-open "$HELPER_URL" 2>/dev/null || true
     elif command -v start >/dev/null 2>&1; then
         # Windows (Git Bash)
         if start "$DASHBOARD_URL" 2>/dev/null; then
             BROWSER_OPENED=true
         fi
+        start "$HELPER_URL" 2>/dev/null || true
     fi
     
     if [ "$BROWSER_OPENED" = true ]; then

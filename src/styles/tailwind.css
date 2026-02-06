@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+@source "../**/*.{ts,tsx}";
+@source "../../public/**/*.html";
+
+@layer base {
+  html {
+    height: 100%;
+    overflow: hidden;
+  }
+  
+  body {
+    @apply antialiased;
+    height: 100%;
+    overflow: hidden;
+  }
+}

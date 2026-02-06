@@ -14,11 +14,12 @@
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
+            min-height: 100dvh;
             display: flex;
-            align-items: center;
+            align-items: flex-start;
             justify-content: center;
-            padding: 20px;
+            padding: 32px 20px 40px;
+            overflow-y: auto;
         }
 
         .container {
@@ -232,12 +233,26 @@
 
         .loading {
             display: none;
-            text-align: center;
-            padding: 20px;
+            position: fixed;
+            inset: 0;
+            z-index: 2000;
+            align-items: center;
+            justify-content: center;
+            background: rgba(15, 23, 42, 0.35);
+            backdrop-filter: blur(2px);
         }
 
         .loading.show {
-            display: block;
+            display: flex;
+        }
+
+        .loading-panel {
+            background: #ffffff;
+            border-radius: 16px;
+            padding: 24px 28px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+            text-align: center;
+            min-width: 260px;
         }
 
         .spinner {
@@ -366,6 +381,25 @@
             font-weight: bold;
             margin-top: 15px;
         }
+
+        .terminal-actions {
+            margin-top: 16px;
+            text-align: right;
+        }
+
+        .terminal-actions.hidden {
+            display: none;
+        }
+
+        .token-callout {
+            margin-top: 16px;
+            padding: 12px 14px;
+            border-radius: 10px;
+            background: #fff3cd;
+            border: 1px solid #f59e0b;
+            color: #92400e;
+            font-weight: 700;
+        }
     </style>
 </head>
 <body>
@@ -378,6 +412,10 @@
             </div>
             <div class="terminal-body">
                 <div class="terminal-output" id="terminal-output"></div>
+                <div class="terminal-actions hidden" id="terminal-actions">
+                    <button class="btn btn-secondary" id="terminal-open">打开授权页面</button>
+                    <button class="btn btn-primary" id="terminal-done">已完成登录</button>
+                </div>
             </div>
         </div>
     </div>
@@ -403,8 +441,10 @@
         <div class="alert alert-error" id="error-alert"></div>
         <div class="alert alert-success" id="success-alert"></div>
         <div class="loading" id="loading">
-            <div class="spinner"></div>
-            <p>正在配置中,请稍候...</p>
+            <div class="loading-panel">
+                <div class="spinner"></div>
+                <p>正在配置中,请稍候...</p>
+            </div>
         </div>
 
         <!-- 步骤 1: 选择模型 -->
@@ -463,6 +503,11 @@
                     <p>Token 的格式通常类似于: <code>123456789:ABCDefghIJKLmnopQRSTuvwxYZ</code></p>
                     <p>直接点击该 Token 即可复制。</p>
                     <img src="./assets/image-6.png" alt="复制 Token" class="guide-image">
+                    <div class="token-callout">在这里输入 Token</div>
+                    <div class="form-group" style="margin-top: 10px;">
+                        <label for="tg-token">Telegram Bot Token</label>
+                        <input type="text" id="tg-token" placeholder="请输入 Bot Token">
+                    </div>
                 </div>
 
                 <div class="guide-step">
@@ -470,11 +515,6 @@
                     <p>在 Telegram 搜索机器人 <strong>@username_to_id_bot</strong>,发送消息获取你的用户 ID。</p>
                     <img src="./assets/image-7.png" alt="获取用户 ID" class="guide-image">
                 </div>
-            </div>
-
-            <div class="form-group">
-                <label for="tg-token">Telegram Bot Token</label>
-                <input type="text" id="tg-token" placeholder="请输入 Bot Token">
             </div>
 
             <div class="form-group">
@@ -494,13 +534,14 @@
                 <div class="success-icon">✓</div>
                 <h2>配置完成!</h2>
                 <p>OpenClaw 已成功配置并启动。</p>
+                <p style="margin-top: 8px; color: #374151; font-weight: 600;">现在可以打开 OpenClaw 页面，并在 Telegram 里向机器人发送消息测试。</p>
                 <p>您现在可以:</p>
                 <ul style="text-align: left; max-width: 400px; margin: 20px auto; color: #6b7280;">
                     <li style="margin-bottom: 10px;">✓ 打开 OpenClaw Dashboard 开始使用</li>
                     <li style="margin-bottom: 10px;">✓ 在 Telegram 中向您的机器人发送消息测试</li>
                     <li>✓ 查看日志: <code>tail -f ~/.openclaw/logs/gateway.log</code></li>
                 </ul>
-                <button class="btn btn-primary" id="open-dashboard">打开 Dashboard</button>
+                <button class="btn btn-primary" id="open-dashboard">开始体验 OpenClaw</button>
             </div>
         </div>
     </div>
@@ -514,6 +555,18 @@
         // 步骤切换
         function showStep(step) {
             document.querySelectorAll('.content').forEach(el => el.classList.remove('active'));
+
+            if (step === 'success') {
+                document.getElementById('success').classList.add('active');
+                for (let i = 1; i <= 2; i++) {
+                    const indicator = document.getElementById(`step-indicator-${i}`);
+                    indicator.classList.remove('active');
+                    indicator.classList.add('completed');
+                }
+                currentStep = step;
+                return;
+            }
+
             document.getElementById(`step-${step}`).classList.add('active');
 
             // 更新步骤指示器
@@ -570,14 +623,106 @@
         });
 
         // OAuth 登录终端
-        function showOAuthTerminal(provider) {
+        function showOAuthTerminal(provider, options = {}) {
             const modal = document.getElementById('terminal-modal');
             const output = document.getElementById('terminal-output');
             const title = document.getElementById('terminal-title');
+            const actions = document.getElementById('terminal-actions');
+            const doneBtn = document.getElementById('terminal-done');
+            const openBtn = document.getElementById('terminal-open');
+            const isManual = !!options.manualOAuth;
+            const isDevice = options.oauthMode === 'device';
             
             modal.classList.add('show');
             output.innerHTML = `正在启动 ${provider === 'gpt' ? 'GPT' : '千问'} OAuth 登录...\n\n`;
             title.textContent = `${provider === 'gpt' ? 'GPT' : '千问'} OAuth 登录`;
+
+            if (isDevice) {
+                actions.classList.remove('hidden');
+                openBtn.style.display = 'inline-block';
+                doneBtn.style.display = 'inline-block';
+
+                output.innerHTML = '正在请求授权链接...';
+
+                const startDeviceFlow = async () => {
+                    try {
+                        const response = await fetch('/api/config/qwen-oauth/start', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' }
+                        });
+                        const result = await response.json();
+                        if (!result.success) {
+                            output.innerHTML = `\n<div class="terminal-error">✗ ${result.error || '启动失败'}</div>`;
+                            return;
+                        }
+
+                        const { sessionId, verificationUrl, userCode, interval } = result.data;
+                        output.innerHTML =
+                            `请在浏览器打开以下链接完成授权：\n${verificationUrl}\n\n` +
+                            `如提示验证码，请输入：${userCode}\n\n` +
+                            `完成授权后点击“已完成登录”。`;
+
+                        openBtn.onclick = () => {
+                            window.open(verificationUrl, '_blank');
+                        };
+
+                        const poll = async () => {
+                            try {
+                                const pollResp = await fetch('/api/config/qwen-oauth/poll', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ sessionId })
+                                });
+                                const pollResult = await pollResp.json();
+
+                                if (pollResult.success && pollResult.data?.status === 'pending') {
+                                    setTimeout(poll, Math.max(1000, (interval || 2) * 1000));
+                                    return;
+                                }
+
+                                if (pollResult.success && pollResult.data?.status === 'success') {
+                                    output.innerHTML += `\n<div class="terminal-success">✓ 登录成功</div>`;
+                                    setTimeout(() => {
+                                        closeOAuthTerminal();
+                                        showAlert('success', '模型配置成功!');
+                                        setTimeout(() => showStep(2), 1000);
+                                    }, 1000);
+                                    return;
+                                }
+
+                                output.innerHTML += `\n<div class="terminal-error">✗ ${pollResult.error || '登录失败'}</div>`;
+                            } catch (e) {
+                                output.innerHTML += `\n<div class="terminal-error">✗ 轮询失败</div>`;
+                            }
+                        };
+
+                        doneBtn.onclick = () => {
+                            output.innerHTML += '\n正在验证授权状态...';
+                            poll();
+                        };
+                    } catch (error) {
+                        output.innerHTML = `\n<div class="terminal-error">✗ 网络错误: ${error.message}</div>`;
+                    }
+                };
+
+                startDeviceFlow();
+                return;
+            }
+
+            if (isManual) {
+                const command = options.command || '';
+                output.innerHTML = `当前环境无法创建交互式终端。\n请在你的本地终端执行以下命令完成登录：\n\n${command}\n\n完成后点击“已完成登录”。`;
+                actions.classList.remove('hidden');
+                openBtn.style.display = 'none';
+                doneBtn.onclick = () => {
+                    closeOAuthTerminal();
+                    showAlert('success', '模型配置完成，请继续下一步');
+                    setTimeout(() => showStep(2), 500);
+                };
+                return;
+            }
+
+            actions.classList.add('hidden');
 
             // 创建 WebSocket 连接
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -624,7 +769,9 @@
 
         function closeOAuthTerminal() {
             const modal = document.getElementById('terminal-modal');
+            const actions = document.getElementById('terminal-actions');
             modal.classList.remove('show');
+            actions.classList.add('hidden');
             if (oauthWebSocket) {
                 oauthWebSocket.close();
                 oauthWebSocket = null;
@@ -659,7 +806,7 @@
 
                     if (result.success && result.data.requiresOAuth) {
                         showLoading(false);
-                        showOAuthTerminal(selectedProvider);
+                        showOAuthTerminal(selectedProvider, result.data);
                     } else if (result.success) {
                         showAlert('success', '模型配置成功!');
                         setTimeout(() => showStep(2), 1000);

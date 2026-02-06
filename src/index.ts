@@ -5,6 +5,9 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import { configRouter } from './routes/config.js';
 import { WebSocketServer } from 'ws';
 import { createServer } from 'http';
+import { ConfigPage, WizardPage } from './views.js';
+import fs from 'fs';
+import path from 'path';
 
 const app = new Hono();
 
@@ -13,7 +16,11 @@ app.use('/*', cors());
 
 // 静态文件服务
 app.use('/assets/*', serveStatic({ root: './public' }));
-app.use('/', serveStatic({ path: './public/index.html' }));
+app.use('/tailwind.css', serveStatic({ path: './public/tailwind.css' }));
+
+// 页面路由
+app.get('/', (c) => c.html(WizardPage()));
+app.get('/config', (c) => c.html(ConfigPage()));
 
 // API 路由
 app.route('/api/config', configRouter);
@@ -31,12 +38,14 @@ console.log(`🌐 访问地址: http://127.0.0.1:${PORT}`);
 
 // 创建 HTTP 服务器
 const server = createServer(async (req, res) => {
+  const hasBody = req.method !== 'GET' && req.method !== 'HEAD';
   const response = await app.fetch(
     new Request(`http://localhost${req.url}`, {
       method: req.method,
       headers: req.headers as any,
-      body: req.method !== 'GET' && req.method !== 'HEAD' ? req : undefined,
-    })
+      body: hasBody ? req : undefined,
+      ...(hasBody ? { duplex: 'half' } : {}),
+    } as RequestInit)
   );
 
   res.statusCode = response.status;
@@ -93,32 +102,98 @@ server.on('upgrade', (request, socket, head) => {
               }
 
               // 创建伪终端
-              const shell = pty.spawn('sh', ['-c', command], {
-                name: 'xterm-color',
-                cols: 80,
-                rows: 30,
-                cwd: process.env.HOME || process.cwd(),
-                env: process.env as any,
-              });
+              const shPath = process.env.SHELL || '/bin/sh';
+              const home = process.env.HOME || process.cwd();
+              const env = {
+                ...process.env,
+                PATH:
+                  process.env.PATH ||
+                  `${home}/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin`,
+                TERM: process.env.TERM || 'xterm-256color',
+              } as any;
 
-              // 监听输出
-              shell.onData((data) => {
-                if (ws.readyState === ws.OPEN) {
-                  ws.send(JSON.stringify({ type: 'output', data }));
-                }
-              });
+              let spawned = false;
+              try {
+                const openclawPath = path.join(home, '.local/bin', 'openclaw');
+                const directOpenclaw = fs.existsSync(openclawPath);
+                const ptyFile = directOpenclaw ? openclawPath : shPath;
+                const ptyArgs = directOpenclaw
+                  ? ['models', 'auth', 'login', '--provider', provider, '--set-default']
+                  : ['-lc', command];
 
-              // 监听退出
-              shell.onExit(({ exitCode }) => {
-                if (ws.readyState === ws.OPEN) {
-                  if (exitCode === 0) {
-                    ws.send(JSON.stringify({ type: 'success', message: '登录成功！' }));
-                  } else {
-                    ws.send(JSON.stringify({ type: 'error', message: `命令执行失败 (退出码: ${exitCode})` }));
+                const shell = pty.spawn(ptyFile, ptyArgs, {
+                  name: 'xterm-color',
+                  cols: 80,
+                  rows: 30,
+                  cwd: home,
+                  env,
+                });
+                spawned = true;
+
+                // 监听输出
+                shell.onData((data) => {
+                  if (ws.readyState === ws.OPEN) {
+                    ws.send(JSON.stringify({ type: 'output', data }));
                   }
-                  setTimeout(() => ws.close(), 1000);
+                });
+
+                // 监听退出
+                shell.onExit(({ exitCode }) => {
+                  if (ws.readyState === ws.OPEN) {
+                    if (exitCode === 0) {
+                      ws.send(JSON.stringify({ type: 'success', message: '登录成功！' }));
+                    } else {
+                      ws.send(JSON.stringify({ type: 'error', message: `命令执行失败 (退出码: ${exitCode})` }));
+                    }
+                    setTimeout(() => ws.close(), 1000);
+                  }
+                });
+              } catch (err: any) {
+                // pty 失败则尝试用 script 分配伪终端
+                const { spawn } = await import('child_process');
+                let child: ReturnType<typeof spawn> | null = null;
+                const scriptPath = '/usr/bin/script';
+                const openclawPath = path.join(home, '.local/bin', 'openclaw');
+                const directOpenclaw = fs.existsSync(openclawPath);
+                const fallbackFile = directOpenclaw ? openclawPath : shPath;
+                const fallbackArgs = directOpenclaw
+                  ? ['models', 'auth', 'login', '--provider', provider, '--set-default']
+                  : ['-lc', command];
+                if (scriptPath) {
+                  child = spawn(scriptPath, ['-q', '/dev/null', fallbackFile, ...fallbackArgs], {
+                    cwd: home,
+                    env,
+                  });
+                } else {
+                  // 再降级为普通子进程（可能仍然要求 TTY）
+                  child = spawn(fallbackFile, fallbackArgs, {
+                    cwd: home,
+                    env,
+                  });
                 }
-              });
+
+                child.stdout.on('data', (data) => {
+                  if (ws.readyState === ws.OPEN) {
+                    ws.send(JSON.stringify({ type: 'output', data: data.toString() }));
+                  }
+                });
+                child.stderr.on('data', (data) => {
+                  if (ws.readyState === ws.OPEN) {
+                    ws.send(JSON.stringify({ type: 'output', data: data.toString() }));
+                  }
+                });
+                child.on('close', (code) => {
+                  if (ws.readyState === ws.OPEN) {
+                    if (code === 0) {
+                      ws.send(JSON.stringify({ type: 'success', message: '登录成功！' }));
+                    } else {
+                      const msg = err?.message ? `，pty 启动失败: ${err.message}` : '';
+                      ws.send(JSON.stringify({ type: 'error', message: `命令执行失败 (退出码: ${code})${msg}` }));
+                    }
+                    setTimeout(() => ws.close(), 1000);
+                  }
+                });
+              }
 
               // 接收用户输入
               ws.on('message', (msg) => {

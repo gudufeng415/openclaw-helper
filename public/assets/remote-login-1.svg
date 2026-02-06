@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800">
+  <rect width="1200" height="800" fill="#f3f4f6"/>
+  <rect x="60" y="60" width="1080" height="680" rx="24" fill="#ffffff" stroke="#e5e7eb" stroke-width="2"/>
+  <text x="120" y="160" font-size="48" font-family="Arial, sans-serif" fill="#111827">共享登录步骤图 1</text>
+  <text x="120" y="230" font-size="28" font-family="Arial, sans-serif" fill="#6b7280">请替换为实际截图</text>
+  <rect x="120" y="280" width="960" height="360" rx="16" fill="#eef2ff" stroke="#c7d2fe" stroke-width="2"/>
+  <text x="160" y="360" font-size="24" font-family="Arial, sans-serif" fill="#4b5563">系统设置 → 通用 → 共享</text>
+</svg>
