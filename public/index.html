@@ -287,9 +287,101 @@
         .success-page .btn {
             margin-top: 20px;
         }
+
+        .terminal-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .terminal-modal.show {
+            display: flex;
+        }
+
+        .terminal-container {
+            background: #1e1e1e;
+            border-radius: 12px;
+            max-width: 800px;
+            width: 100%;
+            max-height: 600px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        }
+
+        .terminal-header {
+            background: #2d2d2d;
+            padding: 15px 20px;
+            border-radius: 12px 12px 0 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .terminal-title {
+            color: #ffffff;
+            font-weight: 500;
+        }
+
+        .terminal-close {
+            background: #ff5f57;
+            border: none;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        .terminal-body {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
+            font-size: 14px;
+            line-height: 1.5;
+            color: #d4d4d4;
+        }
+
+        .terminal-output {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .terminal-success {
+            color: #4ade80;
+            font-weight: bold;
+            margin-top: 15px;
+        }
+
+        .terminal-error {
+            color: #f87171;
+            font-weight: bold;
+            margin-top: 15px;
+        }
     </style>
 </head>
 <body>
+    <!-- 终端模态框 -->
+    <div class="terminal-modal" id="terminal-modal">
+        <div class="terminal-container">
+            <div class="terminal-header">
+                <div class="terminal-title" id="terminal-title">OAuth 登录</div>
+                <button class="terminal-close" id="terminal-close"></button>
+            </div>
+            <div class="terminal-body">
+                <div class="terminal-output" id="terminal-output"></div>
+            </div>
+        </div>
+    </div>
+
     <div class="container">
         <div class="header">
             <h1>OpenClaw 配置助手</h1>
@@ -417,6 +509,7 @@
         let currentStep = 1;
         let selectedProvider = null;
         let minimaxToken = null;
+        let oauthWebSocket = null;
 
         // 步骤切换
         function showStep(step) {
@@ -476,6 +569,70 @@
             nextStep1Btn.disabled = !minimaxToken;
         });
 
+        // OAuth 登录终端
+        function showOAuthTerminal(provider) {
+            const modal = document.getElementById('terminal-modal');
+            const output = document.getElementById('terminal-output');
+            const title = document.getElementById('terminal-title');
+            
+            modal.classList.add('show');
+            output.innerHTML = `正在启动 ${provider === 'gpt' ? 'GPT' : '千问'} OAuth 登录...\n\n`;
+            title.textContent = `${provider === 'gpt' ? 'GPT' : '千问'} OAuth 登录`;
+
+            // 创建 WebSocket 连接
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            oauthWebSocket = new WebSocket(`${protocol}//${window.location.host}/ws/oauth-login`);
+
+            oauthWebSocket.onopen = () => {
+                oauthWebSocket.send(JSON.stringify({ provider }));
+            };
+
+            oauthWebSocket.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+
+                if (data.type === 'output') {
+                    output.innerHTML += data.data;
+                    output.scrollTop = output.scrollHeight;
+                } else if (data.type === 'success') {
+                    output.innerHTML += `\n<div class="terminal-success">✓ ${data.message}</div>`;
+                    setTimeout(() => {
+                        closeOAuthTerminal();
+                        showAlert('success', '模型配置成功!');
+                        setTimeout(() => showStep(2), 1000);
+                    }, 2000);
+                } else if (data.type === 'error') {
+                    output.innerHTML += `\n<div class="terminal-error">✗ ${data.message}</div>`;
+                    setTimeout(() => {
+                        closeOAuthTerminal();
+                        showAlert('error', '登录失败: ' + data.message);
+                    }, 2000);
+                }
+            };
+
+            oauthWebSocket.onerror = (error) => {
+                output.innerHTML += `\n<div class="terminal-error">✗ 连接错误</div>`;
+                setTimeout(() => {
+                    closeOAuthTerminal();
+                    showAlert('error', 'WebSocket 连接失败');
+                }, 2000);
+            };
+
+            oauthWebSocket.onclose = () => {
+                console.log('WebSocket 已关闭');
+            };
+        }
+
+        function closeOAuthTerminal() {
+            const modal = document.getElementById('terminal-modal');
+            modal.classList.remove('show');
+            if (oauthWebSocket) {
+                oauthWebSocket.close();
+                oauthWebSocket = null;
+            }
+        }
+
+        document.getElementById('terminal-close').addEventListener('click', closeOAuthTerminal);
+
         nextStep1Btn.addEventListener('click', async () => {
             if (!selectedProvider) {
                 showAlert('error', '请选择模型提供商');
@@ -487,6 +644,39 @@
                 return;
             }
 
+            // 对于 GPT 和千问，显示 OAuth 终端
+            if (selectedProvider === 'gpt' || selectedProvider === 'qwen') {
+                showLoading(true);
+
+                try {
+                    const response = await fetch('/api/config/model', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ provider: selectedProvider })
+                    });
+
+                    const result = await response.json();
+
+                    if (result.success && result.data.requiresOAuth) {
+                        showLoading(false);
+                        showOAuthTerminal(selectedProvider);
+                    } else if (result.success) {
+                        showAlert('success', '模型配置成功!');
+                        setTimeout(() => showStep(2), 1000);
+                    } else {
+                        showAlert('error', result.error || '配置失败');
+                    }
+                } catch (error) {
+                    showAlert('error', '网络错误: ' + error.message);
+                } finally {
+                    if (selectedProvider !== 'gpt' && selectedProvider !== 'qwen') {
+                        showLoading(false);
+                    }
+                }
+                return;
+            }
+
+            // MiniMax 正常流程
             showLoading(true);
 
             try {

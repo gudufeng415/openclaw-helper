@@ -79,17 +79,25 @@ configRouter.post('/model', async (c) => {
         break;
 
       case 'gpt':
-        // 启用 OpenAI 插件并登录
+        // 启用 OpenAI 插件
         await execa('openclaw', ['plugins', 'enable', 'openai']);
-        await execa('openclaw', ['models', 'auth', 'login', '--provider', 'openai', '--set-default']);
-        result = { provider: 'gpt' };
+        // OAuth 登录通过 WebSocket 完成
+        result = {
+          provider: 'gpt',
+          requiresOAuth: true,
+          message: '请在弹出的终端中完成 GPT OAuth 登录',
+        };
         break;
 
       case 'qwen':
-        // 启用千问插件并登录
+        // 启用千问插件
         await execa('openclaw', ['plugins', 'enable', 'qwen-portal-auth']);
-        await execa('openclaw', ['models', 'auth', 'login', '--provider', 'qwen-portal', '--set-default']);
-        result = { provider: 'qwen' };
+        // OAuth 登录通过 WebSocket 完成
+        result = {
+          provider: 'qwen',
+          requiresOAuth: true,
+          message: '请在弹出的终端中完成千问 OAuth 登录',
+        };
         break;
 
       default:
