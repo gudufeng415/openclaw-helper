@@ -1,15 +1,6 @@
 #!/usr/bin/env bash
 set -e
 
-# 自检:如果脚本没有执行权限或有 macOS 隔离属性,尝试自动修复
-SCRIPT_PATH="${BASH_SOURCE[0]}"
-if [ ! -x "$SCRIPT_PATH" ] || xattr -l "$SCRIPT_PATH" 2>/dev/null | grep -q "com.apple.quarantine"; then
-    echo "检测到脚本需要准备,正在修复..."
-    xattr -c "$SCRIPT_PATH" 2>/dev/null || true
-    chmod +x "$SCRIPT_PATH" 2>/dev/null || true
-    echo "✓ 脚本已准备就绪,重新启动..."
-    exec "$SCRIPT_PATH" "$@"
-fi
 
 # 颜色定义
 RED='\033[0;31m'
