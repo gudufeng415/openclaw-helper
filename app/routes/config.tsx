@@ -1,6 +1,7 @@
 import { createRoute } from 'honox/factory'
 import { html, raw } from 'hono/html'
 import { modelAdderAlpine } from '../lib/alpine/model-adder'
+import { whatsappLinkerAlpine } from '../lib/alpine/whatsapp-linker'
 
 export default createRoute((c) => {
   return c.render(
@@ -171,6 +172,7 @@ export default createRoute((c) => {
       </div>
     </div>
     <script>${raw(modelAdderAlpine)}</script>
+    <script>${raw(whatsappLinkerAlpine)}</script>
     `,
     { title: 'OpenClaw 配置指引' }
   )

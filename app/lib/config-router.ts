@@ -3,6 +3,8 @@ import { execa } from 'execa';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { callGatewayMethod } from './gateway-ws';
+import { extractJson, extractPlainValue } from './utils';
 
 export const configRouter = new Hono();
 
@@ -295,18 +297,7 @@ function resolveRemoteSupportPath() {
   return path.join(home, '.openclaw-helper', 'remote-support.json');
 }
 
-function extractJson(stdout: string) {
-  const start = stdout.indexOf('{');
-  const end = stdout.lastIndexOf('}');
-  if (start === -1 || end === -1 || end <= start) {
-    return null;
-  }
-  try {
-    return JSON.parse(stdout.slice(start, end + 1));
-  } catch {
-    return null;
-  }
-}
+// extractJson 和 extractPlainValue 从 ./utils 导入（会自动剥离 ANSI 转义码）
 
 /**
  * 读取现有的 agents.defaults.models，将 newEntries 合并进去后写回。
@@ -729,7 +720,7 @@ configRouter.get('/telegram', async (c) => {
 
     try {
       const { stdout } = await execa('openclaw', ['config', 'get', 'channels.telegram.botToken']);
-      botToken = stdout.trim().replace(/^"|"$/g, '');
+      botToken = extractPlainValue(stdout).replace(/^"|"$/g, '');
     } catch {}
 
     try {
@@ -820,7 +811,7 @@ configRouter.get('/status', async (c) => {
     // 获取默认模型
     try {
       const { stdout } = await execa('openclaw', ['config', 'get', 'agents.defaults.model.primary']);
-      config.defaultModel = stdout.trim();
+      config.defaultModel = extractPlainValue(stdout);
     } catch {
       config.defaultModel = null;
     }
@@ -828,7 +819,7 @@ configRouter.get('/status', async (c) => {
     // 获取 Telegram 配置
     try {
       const { stdout } = await execa('openclaw', ['config', 'get', 'channels.telegram.botToken']);
-      config.telegramConfigured = !!stdout.trim();
+      config.telegramConfigured = !!extractPlainValue(stdout);
     } catch {
       config.telegramConfigured = false;
     }
@@ -836,7 +827,7 @@ configRouter.get('/status', async (c) => {
     // 获取 Gateway Token
     try {
       const { stdout } = await execa('openclaw', ['config', 'get', 'gateway.auth.token']);
-      config.gatewayToken = stdout.trim() || null;
+      config.gatewayToken = extractPlainValue(stdout) || null;
     } catch {
       config.gatewayToken = null;
     }
@@ -871,7 +862,7 @@ configRouter.get('/models', async (c) => {
     let defaultModel: string | null = null;
     try {
       const { stdout } = await execa('openclaw', ['config', 'get', 'agents.defaults.model.primary']);
-      defaultModel = stdout.trim() || null;
+      defaultModel = extractPlainValue(stdout) || null;
     } catch {
       defaultModel = null;
     }
@@ -945,6 +936,86 @@ configRouter.get('/channels', async (c) => {
         error: '获取渠道配置失败: ' + (error.message || '未知错误'),
       },
       500
+    );
+  }
+});
+
+// ─── WhatsApp QR 链接 ───
+
+// WhatsApp QR 链接: 启动（先注销旧会话，再获取二维码）
+configRouter.post('/whatsapp/link/start', async (c) => {
+  try {
+    // 1. 先注销旧的 WhatsApp 会话（清除凭据），忽略错误（可能本来就没有会话）
+    try {
+      console.log('WhatsApp: 正在注销旧会话...');
+      const logoutResult = await callGatewayMethod(
+        'channels.logout',
+        { channel: 'whatsapp', accountId: 'default' },
+        15000,
+      );
+      console.log('WhatsApp: 注销结果:', JSON.stringify(logoutResult));
+    } catch (logoutErr: any) {
+      // 没有已有会话时注销会失败，这是正常的
+      console.log('WhatsApp: 注销跳过 (可能无旧会话):', logoutErr.message);
+    }
+
+    // 2. 生成新的 QR 码
+    console.log('WhatsApp: 正在生成 QR 码...');
+    const result = await callGatewayMethod(
+      'web.login.start',
+      {
+        accountId: 'default',
+        force: true,
+        timeoutMs: 30000,
+        verbose: false,
+      },
+      45000,
+    );
+    return c.json({
+      success: true,
+      data: {
+        qrDataUrl: result.qrDataUrl,
+        message: result.message || '请使用 WhatsApp 扫描二维码',
+      },
+    });
+  } catch (error: any) {
+    console.error('WhatsApp QR 链接启动失败:', error);
+    return c.json(
+      {
+        success: false,
+        error: 'WhatsApp 链接启动失败: ' + (error.message || '未知错误'),
+      },
+      500,
+    );
+  }
+});
+
+// WhatsApp QR 链接: 轮询（等待扫码完成）
+configRouter.post('/whatsapp/link/poll', async (c) => {
+  try {
+    const result = await callGatewayMethod(
+      'web.login.wait',
+      {
+        accountId: 'default',
+        timeoutMs: 8000,
+      },
+      15000,
+    );
+    return c.json({
+      success: true,
+      data: {
+        connected: !!result.connected,
+        message: result.message || '',
+      },
+    });
+  } catch (error: any) {
+    console.error('WhatsApp QR 链接轮询失败:', error);
+    return c.json(
+      {
+        success: false,
+        error: 'WhatsApp 链接状态查询失败: ' + (error.message || '未知错误'),
+      },
+      500,
     );
   }
 });
