@@ -5,7 +5,7 @@ import { Fragment } from 'hono/jsx'
  * @param withTokenInput - 显示 Token 输入框
  * @param alpineTokenModel - Alpine.js x-model 绑定名（如 'tgToken'），不传则用普通 input
  */
-export function TelegramGuide(props: { withTokenInput?: boolean; alpineTokenModel?: string }) {
+export function TelegramGuide(props: { withTokenInput?: boolean; alpineTokenModel?: string; inputName?: string; tokenPlaceholder?: string }) {
   return (
     <div class="rounded-2xl border border-slate-200 bg-slate-50 p-6">
       <h3 class="text-lg font-semibold text-slate-700">配置指南</h3>
@@ -38,9 +38,9 @@ export function TelegramGuide(props: { withTokenInput?: boolean; alpineTokenMode
               <div class="mt-3">
                 <label for="tg-token" class="mb-2 block text-sm font-medium text-slate-600">Telegram Bot Token</label>
                 {props.alpineTokenModel ? (
-                  <input type="text" x-model={props.alpineTokenModel} placeholder="请输入 Bot Token" class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:border-indigo-400 focus:outline-none" />
+                  <input type="text" x-model={props.alpineTokenModel} name={props.inputName} placeholder={props.tokenPlaceholder || '请输入 Bot Token'} class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:border-indigo-400 focus:outline-none" />
                 ) : (
-                  <input type="text" id="tg-token" placeholder="请输入 Bot Token" class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:border-indigo-400 focus:outline-none" />
+                  <input type="text" id="tg-token" name={props.inputName} placeholder={props.tokenPlaceholder || '请输入 Bot Token'} class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:border-indigo-400 focus:outline-none" />
                 )}
               </div>
             </Fragment>

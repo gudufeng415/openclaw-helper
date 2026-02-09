@@ -1,8 +1,5 @@
 import { createRoute } from 'honox/factory'
 import { html } from 'hono/html'
-import { TelegramGuide } from '../components/TelegramGuide'
-
-const tgGuide = TelegramGuide({})
 
 export default createRoute((c) => {
   return c.render(
@@ -69,6 +66,7 @@ export default createRoute((c) => {
             <div x-show="tab==='channels'" x-cloak>
               <div class="rounded-2xl border border-slate-200 bg-slate-50 p-6">
                 <h4 class="text-lg font-semibold text-slate-800">已配置渠道</h4>
+                <p class="mt-2 text-sm text-slate-500">管理已配置的消息渠道，支持编辑和启用/关闭。</p>
                 <div class="mt-4 grid gap-3 md:grid-cols-2"
                      id="channel-list"
                      hx-get="/api/partials/channels"
@@ -79,20 +77,15 @@ export default createRoute((c) => {
               </div>
               <div class="mt-6 rounded-2xl border border-slate-200 bg-white p-6">
                 <h4 class="text-lg font-semibold text-slate-800">新增渠道</h4>
-                <p class="mt-2 text-sm text-slate-500">支持 Telegram 与 WhatsApp，点击对应按钮查看指引。</p>
-                <div class="mt-4 flex flex-wrap gap-3">
-                  <button @click="document.getElementById('tg-guide').scrollIntoView({behavior:'smooth'})" class="rounded-lg bg-indigo-500 px-4 py-2 text-sm text-white hover:bg-indigo-400">添加 Telegram</button>
-                  <button @click="document.getElementById('whatsapp-guide').scrollIntoView({behavior:'smooth'})" class="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-100">添加 WhatsApp</button>
+                <p class="mt-2 text-sm text-slate-500">选择要添加的渠道类型，点击对应按钮开始配置。</p>
+                <div id="available-channels"
+                     hx-get="/api/partials/channels/available"
+                     hx-trigger="intersect once"
+                     hx-swap="innerHTML">
+                  <p class="mt-4 text-sm text-slate-400">加载中...</p>
                 </div>
               </div>
-              <div class="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-6" id="tg-guide">
-                <h4 class="text-lg font-semibold text-slate-800">Telegram 配置指引</h4>
-                <div class="mt-4">${tgGuide}</div>
-              </div>
-              <div class="mt-6 rounded-2xl border border-slate-200 bg-white p-6" id="whatsapp-guide">
-                <h4 class="text-lg font-semibold text-slate-800">WhatsApp 配置指引</h4>
-                <p class="mt-2 text-sm text-slate-500">请先在 WhatsApp Business 平台创建应用并获取 Token，随后在 OpenClaw Dashboard 中配置。</p>
-              </div>
+              <div id="channel-form-area" class="mt-6"></div>
             </div>
 
             <!-- ═══ 技能管理 ═══ -->
