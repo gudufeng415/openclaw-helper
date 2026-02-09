@@ -321,13 +321,9 @@ partialsRouter.get('/channels/:id/edit', async (c) => {
   const channelId = c.req.param('id')
   if (channelId === 'telegram') {
     const config = await fetchChannelConfig('telegram')
-    const maskedToken = config.botToken ? config.botToken.substring(0, 10) + '...' : ''
+    const botToken = config.botToken || ''
     const userId = Array.isArray(config.allowFrom) ? config.allowFrom[0] || '' : ''
-    const tgGuide = TelegramGuide({
-      withTokenInput: true,
-      inputName: 'botToken',
-      tokenPlaceholder: maskedToken ? `当前: ${maskedToken} (留空保持不变)` : '请输入 Bot Token',
-    })
+    const tgGuide = TelegramGuide({ withTokenInput: false })
     return c.html(
       <div class="rounded-2xl border border-indigo-200 bg-indigo-50/50 p-6">
         <div class="flex items-center justify-between">
@@ -341,7 +337,7 @@ partialsRouter.get('/channels/:id/edit', async (c) => {
           </details>
           <div class="mt-6">
             <label class="mb-2 block text-sm font-medium text-slate-600">Telegram Bot Token</label>
-            <input type="text" name="botToken" placeholder={maskedToken ? `当前: ${maskedToken} (留空保持不变)` : '请输入 Bot Token'} class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:border-indigo-400 focus:outline-none" />
+            <input type="text" name="botToken" value={botToken} placeholder="请输入 Bot Token" class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:border-indigo-400 focus:outline-none" />
           </div>
           <div class="mt-4">
             <label class="mb-2 block text-sm font-medium text-slate-600">Telegram 用户 ID</label>
@@ -368,14 +364,12 @@ partialsRouter.post('/channels/:id/save', async (c) => {
     const body = await c.req.parseBody()
     const botToken = (body.botToken as string || '').trim()
     const userId = (body.userId as string || '').trim()
-    if (!userId) {
-      c.header('HX-Trigger', asciiJson({ 'show-alert': { type: 'error', message: '请填写用户 ID' } }))
+    if (!botToken || !userId) {
+      c.header('HX-Trigger', asciiJson({ 'show-alert': { type: 'error', message: '请填写 Bot Token 和用户 ID' } }))
       const channels = await fetchChannels()
       return c.html(<ChannelList channels={channels} />)
     }
-    if (botToken) {
-      await execa('openclaw', ['config', 'set', '--json', 'channels.telegram.botToken', JSON.stringify(botToken)])
-    }
+    await execa('openclaw', ['config', 'set', '--json', 'channels.telegram.botToken', JSON.stringify(botToken)])
     await execa('openclaw', ['config', 'set', '--json', 'channels.telegram.allowFrom', JSON.stringify([userId])])
     // 重启 gateway
     try { await execa('pkill', ['-f', 'openclaw.*gateway']); await new Promise((r) => setTimeout(r, 2000)) } catch {}

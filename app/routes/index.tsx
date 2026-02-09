@@ -94,7 +94,7 @@ export default createRoute((c) => {
               <button @click="step = 1" class="rounded-lg border border-slate-200 px-5 py-2 text-sm text-slate-600 hover:bg-slate-100">上一步</button>
               <div class="flex gap-3">
                 <button @click="skipTelegram()" class="rounded-lg bg-slate-100 px-5 py-2 text-sm text-slate-600 hover:bg-slate-200">跳过</button>
-                <button @click="submitStep2()" :disabled="!canStep2" class="rounded-lg bg-indigo-500 px-5 py-2 text-sm text-white hover:bg-indigo-400 disabled:bg-slate-200 disabled:text-slate-400">完成配置</button>
+                <button @click="submitStep2()" :disabled="!tgToken.trim() || !tgUserId.trim()" class="rounded-lg bg-indigo-500 px-5 py-2 text-sm text-white hover:bg-indigo-400 disabled:bg-slate-200 disabled:text-slate-400">完成配置</button>
               </div>
             </div>
           </div>

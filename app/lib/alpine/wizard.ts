@@ -169,7 +169,7 @@ document.addEventListener('alpine:init', () => {
     },
 
     async submitStep2() {
-      if (!this.canStep2) return;
+      if (!this.tgToken.trim() || !this.tgUserId.trim()) return;
       this.loading = true;
       try {
         const res = await fetch('/api/config/telegram', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: this.tgToken.trim(), userId: this.tgUserId.trim() }) });
