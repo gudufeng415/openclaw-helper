@@ -18,6 +18,13 @@ function asciiJson(obj: any): string {
 
 type ModelInfo = { key: string; label: string; input: string[] }
 
+/** 将 input 字段统一为 string[]，兼容数组、"text+image" 字符串、纯字符串等格式 */
+function parseInput(raw: any): string[] {
+  if (Array.isArray(raw)) return raw
+  if (typeof raw === 'string' && raw) return raw.split('+').map((s: string) => s.trim()).filter(Boolean)
+  return ['text']
+}
+
 async function fetchModels() {
   // 使用 openclaw models list 获取所有可用模型（包括内置提供商如 openai-codex）
   let models: ModelInfo[] = []
@@ -28,7 +35,7 @@ async function fetchModels() {
       models = modelsJson.models.map((m: any) => ({
         key: m.key || 'unknown',
         label: `${m.name || m.key} (${(m.key || '').split('/')[0]})`,
-        input: Array.isArray(m.input) ? m.input : ['text'],
+        input: parseInput(m.input),
       }))
     }
   } catch {
@@ -44,7 +51,7 @@ async function fetchModels() {
           models.push({
             key: `${providerId}/${id}`,
             label: `${name} (${providerId})`,
-            input: Array.isArray(model?.input) ? model.input : ['text'],
+            input: parseInput(model?.input),
           })
         })
       })
@@ -59,36 +66,38 @@ async function fetchModels() {
     defaultModel = null
   }
 
-  let defaultVisionModel: string | null = null
-  try {
-    const { stdout } = await execa('openclaw', ['config', 'get', 'agents.defaults.model.vision'])
-    defaultVisionModel = extractPlainValue(stdout) || null
-  } catch {
-    defaultVisionModel = null
-  }
-
-  return { models, defaultModel, defaultVisionModel }
+  return { models, defaultModel }
 }
 
-function ModelCard(props: { model: ModelInfo; active: boolean; role: 'primary' | 'vision' }) {
-  const endpoint = props.role === 'primary' ? '/api/partials/models/default' : '/api/partials/models/vision-default'
-  const activeColor = props.role === 'primary' ? 'border-indigo-300 bg-indigo-50' : 'border-violet-300 bg-violet-50'
-  const btnLabel = props.role === 'primary' ? '设为主模型' : '设为视觉模型'
-  const activeLabel = props.role === 'primary' ? '✓ 当前主模型' : '✓ 当前视觉模型'
+const INPUT_LABELS: Record<string, string> = {
+  text: '文本',
+  image: '图片',
+  audio: '音频',
+  video: '视频',
+}
+
+function ModelCard(props: { model: ModelInfo; isDefault: boolean }) {
   return (
-    <div class={`rounded-xl border ${props.active ? activeColor : 'border-slate-200 bg-white'} p-4`}>
+    <div class={`rounded-xl border ${props.isDefault ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 bg-white'} p-4`}>
       <strong class="text-sm text-slate-700">{props.model.label}</strong>
-      <div class="mt-2 text-xs text-slate-500">{props.model.key}</div>
+      <div class="mt-1.5 text-xs text-slate-500">{props.model.key}</div>
+      <div class="mt-2 flex flex-wrap gap-1">
+        {props.model.input.map((t) => (
+          <span class="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600">
+            {INPUT_LABELS[t] || t}
+          </span>
+        ))}
+      </div>
       <div class="mt-3 flex flex-wrap gap-2">
         <button
           class="rounded-lg border border-slate-200 px-3 py-1 text-xs text-slate-600 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
-          hx-post={endpoint}
+          hx-post="/api/partials/models/default"
           hx-vals={JSON.stringify({ model: props.model.key })}
           hx-target="#model-list"
           hx-swap="innerHTML"
           hx-disabled-elt="this"
         >
-          <span class="hx-ready">{props.active ? activeLabel : btnLabel}</span>
+          <span class="hx-ready">{props.isDefault ? '✓ 当前默认' : '设为默认'}</span>
           <span class="hx-loading items-center gap-1">
             <svg class="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
             切换中…
@@ -99,77 +108,33 @@ function ModelCard(props: { model: ModelInfo; active: boolean; role: 'primary' |
   )
 }
 
-function ModelList(props: { models: ModelInfo[]; defaultModel: string | null; defaultVisionModel: string | null }) {
+function ModelList(props: { models: ModelInfo[]; defaultModel: string | null }) {
   if (!props.models.length) {
     return <p class="text-sm text-slate-500">暂无已配置模型</p>
   }
-
-  const primaryLabel = props.defaultModel
+  const defaultLabel = props.defaultModel
     ? props.models.find((m) => m.key === props.defaultModel)?.label || props.defaultModel
     : null
-  const visionLabel = props.defaultVisionModel
-    ? props.models.find((m) => m.key === props.defaultVisionModel)?.label || props.defaultVisionModel
-    : null
-
-  // 按 input 能力分类：含 image 的归为视觉模型，其余归为主模型
-  const primaryModels = props.models.filter((m) => !m.input.includes('image'))
-  const visionModels = props.models.filter((m) => m.input.includes('image'))
-
   return (
     <>
-      {/* 当前默认概览 */}
-      <div class="col-span-full space-y-2 mb-2">
-        <div class="flex items-center gap-2 rounded-xl border border-indigo-100 bg-indigo-50/60 px-4 py-3">
-          <span class="inline-flex shrink-0 items-center rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-semibold text-indigo-700">主模型</span>
-          <span class="text-sm text-slate-600">当前：</span>
-          {primaryLabel
-            ? <strong class="text-sm text-indigo-700">{primaryLabel}</strong>
-            : <span class="text-sm text-slate-400">未设置</span>
-          }
-        </div>
-        <div class="flex items-center gap-2 rounded-xl border border-violet-100 bg-violet-50/60 px-4 py-3">
-          <span class="inline-flex shrink-0 items-center rounded-full bg-violet-100 px-2.5 py-0.5 text-xs font-semibold text-violet-700">视觉模型</span>
-          <span class="text-sm text-slate-600">当前：</span>
-          {visionLabel
-            ? <strong class="text-sm text-violet-700">{visionLabel}</strong>
-            : <span class="text-sm text-slate-400">未设置</span>
-          }
-        </div>
+      <div class="col-span-full mb-1 rounded-xl border border-indigo-100 bg-indigo-50/60 px-4 py-3">
+        <span class="text-sm text-slate-600">当前默认模型：</span>
+        {defaultLabel
+          ? <strong class="text-sm text-indigo-700">{defaultLabel}</strong>
+          : <span class="text-sm text-slate-400">未设置</span>
+        }
       </div>
-
-      {/* 主模型列表 */}
-      {primaryModels.length > 0 && (
-        <>
-          <div class="col-span-full mt-2">
-            <h5 class="text-sm font-semibold text-slate-700">主模型</h5>
-            <p class="text-xs text-slate-400 mt-0.5">用于文本对话与推理任务</p>
-          </div>
-          {primaryModels.map((model) => (
-            <ModelCard model={model} active={model.key === props.defaultModel} role="primary" />
-          ))}
-        </>
-      )}
-
-      {/* 视觉模型列表 */}
-      {visionModels.length > 0 && (
-        <>
-          <div class="col-span-full mt-4">
-            <h5 class="text-sm font-semibold text-slate-700">视觉模型</h5>
-            <p class="text-xs text-slate-400 mt-0.5">支持图片理解与多模态任务</p>
-          </div>
-          {visionModels.map((model) => (
-            <ModelCard model={model} active={model.key === props.defaultVisionModel} role="vision" />
-          ))}
-        </>
-      )}
+      {props.models.map((model) => (
+        <ModelCard model={model} isDefault={model.key === props.defaultModel} />
+      ))}
     </>
   )
 }
 
 partialsRouter.get('/models', async (c) => {
   try {
-    const { models, defaultModel, defaultVisionModel } = await fetchModels()
-    return c.html(<ModelList models={models} defaultModel={defaultModel} defaultVisionModel={defaultVisionModel} />)
+    const { models, defaultModel } = await fetchModels()
+    return c.html(<ModelList models={models} defaultModel={defaultModel} />)
   } catch {
     return c.html(<p class="text-sm text-red-500">无法读取模型配置</p>)
   }
@@ -180,36 +145,15 @@ partialsRouter.post('/models/default', async (c) => {
   const model = body.model as string
   if (!model) return c.html(<p class="text-sm text-red-500">缺少模型参数</p>, 400)
   try {
-    // 使用 dot notation 只设置 primary，不覆盖 vision
-    await execa('openclaw', ['config', 'set', 'agents.defaults.model.primary', model])
-    const { models, defaultModel, defaultVisionModel } = await fetchModels()
-    c.header('HX-Trigger', asciiJson({ 'show-alert': { type: 'success', message: '已切换默认主模型' } }))
-    return c.html(<ModelList models={models} defaultModel={defaultModel} defaultVisionModel={defaultVisionModel} />)
+    await execa('openclaw', ['config', 'set', '--json', 'agents.defaults.model', JSON.stringify({ primary: model })])
+    const { models, defaultModel } = await fetchModels()
+    c.header('HX-Trigger', asciiJson({ 'show-alert': { type: 'success', message: '已切换默认模型' } }))
+    return c.html(<ModelList models={models} defaultModel={defaultModel} />)
   } catch (err: any) {
     c.header('HX-Trigger', asciiJson({ 'show-alert': { type: 'error', message: '切换失败: ' + err.message } }))
     try {
-      const { models, defaultModel, defaultVisionModel } = await fetchModels()
-      return c.html(<ModelList models={models} defaultModel={defaultModel} defaultVisionModel={defaultVisionModel} />)
-    } catch {
-      return c.html(<p class="text-sm text-red-500">切换失败</p>, 500)
-    }
-  }
-})
-
-partialsRouter.post('/models/vision-default', async (c) => {
-  const body = await c.req.parseBody()
-  const model = body.model as string
-  if (!model) return c.html(<p class="text-sm text-red-500">缺少模型参数</p>, 400)
-  try {
-    await execa('openclaw', ['config', 'set', 'agents.defaults.model.vision', model])
-    const { models, defaultModel, defaultVisionModel } = await fetchModels()
-    c.header('HX-Trigger', asciiJson({ 'show-alert': { type: 'success', message: '已切换默认视觉模型' } }))
-    return c.html(<ModelList models={models} defaultModel={defaultModel} defaultVisionModel={defaultVisionModel} />)
-  } catch (err: any) {
-    c.header('HX-Trigger', asciiJson({ 'show-alert': { type: 'error', message: '切换失败: ' + err.message } }))
-    try {
-      const { models, defaultModel, defaultVisionModel } = await fetchModels()
-      return c.html(<ModelList models={models} defaultModel={defaultModel} defaultVisionModel={defaultVisionModel} />)
+      const { models, defaultModel } = await fetchModels()
+      return c.html(<ModelList models={models} defaultModel={defaultModel} />)
     } catch {
       return c.html(<p class="text-sm text-red-500">切换失败</p>, 500)
     }

@@ -107,7 +107,7 @@ async function getLoginOpenAICodex() {
   }
 
   try {
-    const mod = await import(`file://${modulePath}`);
+    const mod = await import(/* @vite-ignore */ `file://${modulePath}`);
     _loginOpenAICodex = mod.loginOpenAICodex;
     console.log(`已加载 loginOpenAICodex from: ${modulePath}`);
     return _loginOpenAICodex;
@@ -883,12 +883,12 @@ configRouter.post('/models/default', async (c) => {
     if (!model) {
       return c.json({ success: false, error: '缺少模型参数' }, 400);
     }
-    // 使用 dot notation 只设置 primary，不覆盖 vision
     await execa('openclaw', [
       'config',
       'set',
-      'agents.defaults.model.primary',
-      model,
+      '--json',
+      'agents.defaults.model',
+      JSON.stringify({ primary: model }),
     ]);
     return c.json({ success: true });
   } catch (error: any) {

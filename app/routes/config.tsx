@@ -41,7 +41,7 @@ export default createRoute((c) => {
             <div x-show="tab==='models'">
               <div class="rounded-2xl border border-slate-200 bg-slate-50 p-6">
                 <h4 class="text-lg font-semibold text-slate-800">已配置模型</h4>
-                <p class="mt-2 text-sm text-slate-500">模型分为主模型（文本对话）和视觉模型（图片理解）两类，分别可以设置当前默认使用的模型。</p>
+                <p class="mt-2 text-sm text-slate-500">下方显示当前 OpenClaw 配置的模型及其支持的输入类型，点击可快速切换默认模型。</p>
                 <div class="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3"
                      id="model-list"
                      hx-get="/api/partials/models"
