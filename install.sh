@@ -686,7 +686,8 @@ manage_helper_service() {
         if [ -d "$HELPER_DIR" ]; then
             print_info "更新现有项目..."
             cd "$HELPER_DIR"
-            git pull
+            git fetch --all
+            git reset --hard origin/main
             npm install --omit=dev
         else
             print_info "克隆项目仓库..."
