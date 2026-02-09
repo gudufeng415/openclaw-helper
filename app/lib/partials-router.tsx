@@ -17,8 +17,33 @@ function asciiJson(obj: any): string {
 // ─── 模型列表片段 ───
 
 async function fetchModels() {
-  const { stdout: providersRaw } = await execa('openclaw', ['config', 'get', '--json', 'models.providers'])
-  const providersJson = extractJson(providersRaw) || {}
+  // 使用 openclaw models list 获取所有可用模型（包括内置提供商如 openai-codex）
+  let models: Array<{ key: string; label: string }> = []
+  try {
+    const { stdout: modelsRaw } = await execa('openclaw', ['models', 'list', '--json'])
+    const modelsJson = extractJson(modelsRaw)
+    if (modelsJson && Array.isArray(modelsJson.models)) {
+      models = modelsJson.models.map((m: any) => ({
+        key: m.key || 'unknown',
+        label: `${m.name || m.key} (${(m.key || '').split('/')[0]})`,
+      }))
+    }
+  } catch {
+    // 降级：从 models.providers 配置读取
+    try {
+      const { stdout: providersRaw } = await execa('openclaw', ['config', 'get', '--json', 'models.providers'])
+      const providersJson = extractJson(providersRaw) || {}
+      Object.entries(providersJson).forEach(([providerId, provider]: any) => {
+        const list = Array.isArray(provider?.models) ? provider.models : []
+        list.forEach((model: any) => {
+          const id = model?.id || model?.name || 'unknown'
+          const name = model?.name || model?.id || id
+          models.push({ key: `${providerId}/${id}`, label: `${name} (${providerId})` })
+        })
+      })
+    } catch {}
+  }
+
   let defaultModel: string | null = null
   try {
     const { stdout } = await execa('openclaw', ['config', 'get', 'agents.defaults.model.primary'])
@@ -26,15 +51,6 @@ async function fetchModels() {
   } catch {
     defaultModel = null
   }
-  const models: Array<{ key: string; label: string }> = []
-  Object.entries(providersJson).forEach(([providerId, provider]: any) => {
-    const list = Array.isArray(provider?.models) ? provider.models : []
-    list.forEach((model: any) => {
-      const id = model?.id || model?.name || 'unknown'
-      const name = model?.name || model?.id || id
-      models.push({ key: `${providerId}/${id}`, label: `${name} (${providerId})` })
-    })
-  })
   return { models, defaultModel }
 }
 
@@ -270,7 +286,7 @@ partialsRouter.post('/channels/add/telegram', async (c) => {
       const channels = await fetchChannels()
       return c.html(<ChannelList channels={channels} />)
     }
-    await execa('openclaw', ['config', 'set', 'channels.telegram.botToken', botToken])
+    await execa('openclaw', ['config', 'set', '--json', 'channels.telegram.botToken', JSON.stringify(botToken)])
     await execa('openclaw', ['config', 'set', '--json', 'channels.telegram.allowFrom', JSON.stringify([userId])])
     // 重启 gateway
     try { await execa('pkill', ['-f', 'openclaw.*gateway']); await new Promise((r) => setTimeout(r, 2000)) } catch {}
@@ -358,7 +374,7 @@ partialsRouter.post('/channels/:id/save', async (c) => {
       return c.html(<ChannelList channels={channels} />)
     }
     if (botToken) {
-      await execa('openclaw', ['config', 'set', 'channels.telegram.botToken', botToken])
+      await execa('openclaw', ['config', 'set', '--json', 'channels.telegram.botToken', JSON.stringify(botToken)])
     }
     await execa('openclaw', ['config', 'set', '--json', 'channels.telegram.allowFrom', JSON.stringify([userId])])
     // 重启 gateway

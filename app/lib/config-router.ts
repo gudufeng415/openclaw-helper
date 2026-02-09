@@ -14,6 +14,7 @@ const QWEN_OAUTH_SCOPE = 'openid profile email model.completion';
 const QWEN_OAUTH_GRANT_TYPE = 'urn:ietf:params:oauth:grant-type:device_code';
 const QWEN_DEFAULT_BASE_URL = 'https://portal.qwen.ai/v1';
 const QWEN_DEFAULT_MODEL = 'qwen-portal/coder-model';
+const OPENAI_CODEX_DEFAULT_MODEL = 'openai-codex/gpt-5.2';
 
 type QwenDeviceSession = {
   sessionId: string;
@@ -27,13 +28,132 @@ const qwenDeviceSessions = new Map<string, QwenDeviceSession>();
 
 type GptOAuthSession = {
   sessionId: string;
-  process: any;
   status: 'pending' | 'success' | 'error';
   error?: string;
+  authUrl?: string;
   startedAt: number;
 };
 
 const gptOAuthSessions = new Map<string, GptOAuthSession>();
+
+// 动态导入 openclaw 内置的 loginOpenAICodex（来自 @mariozechner/pi-ai）
+let _loginOpenAICodex: any = null;
+const PI_AI_REL = 'node_modules/@mariozechner/pi-ai/dist/utils/oauth/openai-codex.js';
+
+async function resolveOpenclawRoot(): Promise<string | null> {
+  const home = process.env.HOME || '';
+
+  // 1. 通过 which openclaw 找到 bin，然后解析真实路径
+  //    openclaw 可能是 bash wrapper: exec /path/to/node/bin/openclaw "$@"
+  try {
+    const { stdout: whichOut } = await execa('which', ['openclaw']);
+    const binPath = whichOut.trim();
+
+    // 如果是脚本包装器，解析其中的 exec 目标路径
+    try {
+      const content = fs.readFileSync(binPath, 'utf-8');
+      const execMatch = content.match(/exec\s+(.+?)\/bin\/openclaw/);
+      if (execMatch) {
+        const nodePrefix = execMatch[1].trim();
+        const root = path.join(nodePrefix, 'lib/node_modules/openclaw');
+        if (fs.existsSync(root)) return root;
+      }
+    } catch {}
+
+    // 如果是真实的 node 二进制 symlink
+    try {
+      const realBin = fs.realpathSync(binPath);
+      const root = path.resolve(path.dirname(realBin), '..', 'lib/node_modules/openclaw');
+      if (fs.existsSync(root)) return root;
+    } catch {}
+  } catch {}
+
+  // 2. 扫描 nvm 安装的各个 node 版本
+  const nvmDir = path.join(home, '.nvm/versions/node');
+  try {
+    if (fs.existsSync(nvmDir)) {
+      const versions = fs.readdirSync(nvmDir).sort().reverse(); // 从新到旧
+      for (const v of versions) {
+        const root = path.join(nvmDir, v, 'lib/node_modules/openclaw');
+        if (fs.existsSync(root)) return root;
+      }
+    }
+  } catch {}
+
+  // 3. 常见全局安装路径
+  const fallbacks = [
+    path.join(home, '.local/lib/node_modules/openclaw'),
+    '/usr/local/lib/node_modules/openclaw',
+    '/usr/lib/node_modules/openclaw',
+  ];
+  for (const root of fallbacks) {
+    if (fs.existsSync(root)) return root;
+  }
+
+  return null;
+}
+
+async function getLoginOpenAICodex() {
+  if (_loginOpenAICodex) return _loginOpenAICodex;
+
+  const openclawRoot = await resolveOpenclawRoot();
+  if (!openclawRoot) {
+    throw new Error('无法找到 openclaw 安装目录，请确认 openclaw 已正确安装');
+  }
+
+  const modulePath = path.join(openclawRoot, PI_AI_REL);
+  if (!fs.existsSync(modulePath)) {
+    throw new Error(`找到 openclaw 目录 (${openclawRoot}) 但缺少 pi-ai 模块: ${modulePath}`);
+  }
+
+  try {
+    const mod = await import(`file://${modulePath}`);
+    _loginOpenAICodex = mod.loginOpenAICodex;
+    console.log(`已加载 loginOpenAICodex from: ${modulePath}`);
+    return _loginOpenAICodex;
+  } catch (err: any) {
+    throw new Error(`加载 loginOpenAICodex 失败: ${err.message}`);
+  }
+}
+
+// 写入 OpenAI Codex 凭据到 auth-profiles.json
+function writeOpenAICodexCredentials(creds: { access: string; refresh: string; expires: number; email?: string; [key: string]: unknown }) {
+  const home = process.env.HOME || process.cwd();
+  const agentDir = process.env.OPENCLAW_AGENT_DIR?.trim() || path.join(home, '.openclaw', 'agents', 'main', 'agent');
+  const authProfilePath = path.join(agentDir, 'auth-profiles.json');
+
+  let store: any = { version: 1, profiles: {} };
+  try {
+    if (fs.existsSync(authProfilePath)) {
+      store = JSON.parse(fs.readFileSync(authProfilePath, 'utf-8'));
+    }
+  } catch {}
+
+  const profileId = `openai-codex:${creds.email?.trim() || 'default'}`;
+  store.profiles[profileId] = {
+    type: 'oauth',
+    provider: 'openai-codex',
+    ...creds,
+  };
+
+  const dir = path.dirname(authProfilePath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  fs.writeFileSync(authProfilePath, JSON.stringify(store, null, 2));
+  console.log(`OpenAI Codex 凭据已写入 ${authProfilePath} (profile: ${profileId})`);
+}
+
+// 配置 OpenAI Codex 默认模型
+async function applyOpenAICodexConfig() {
+  await execa('openclaw', [
+    'config',
+    'set',
+    '--json',
+    'agents.defaults.model',
+    JSON.stringify({ primary: OPENAI_CODEX_DEFAULT_MODEL }),
+  ]);
+}
 
 function toFormUrlEncoded(data: Record<string, string>): string {
   return Object.entries(data)
@@ -260,32 +380,6 @@ async function applyQwenConfig(resourceUrl?: string) {
   ]);
 }
 
-async function getOpenClawPlugins() {
-  const { stdout } = await execa('openclaw', ['plugins', 'list', '--json']);
-  const jsonStart = stdout.indexOf('{');
-  const jsonEnd = stdout.lastIndexOf('}');
-  if (jsonStart === -1 || jsonEnd === -1 || jsonEnd <= jsonStart) {
-    throw new Error('无法解析 OpenClaw 插件列表');
-  }
-  const data = JSON.parse(stdout.slice(jsonStart, jsonEnd + 1));
-  return Array.isArray(data.plugins) ? data.plugins : [];
-}
-
-function resolveOpenAIPluginId(plugins: any[]) {
-  const direct = plugins.find((p) => p.id === 'openai');
-  if (direct) return 'openai';
-  const byProvider = plugins.find(
-    (p) => Array.isArray(p.providerIds) && p.providerIds.includes('openai')
-  );
-  if (byProvider?.id) return byProvider.id;
-  const byName = plugins.find(
-    (p) =>
-      typeof p.id === 'string' &&
-      (p.id.includes('openai') || p.id.includes('open-ai'))
-  );
-  return byName?.id || null;
-}
-
 // 配置模型
 configRouter.post('/model', async (c) => {
   try {
@@ -362,7 +456,7 @@ configRouter.post('/model', async (c) => {
         break;
 
       case 'gpt':
-        // 使用自动化 OAuth 流程
+        // OpenAI Codex 使用内置 ChatGPT OAuth，无需插件
         result = {
           provider: 'gpt',
           requiresOAuth: true,
@@ -435,83 +529,77 @@ configRouter.post('/qwen-oauth/start', async (c) => {
   }
 });
 
-// GPT OAuth: 启动授权流程
+// GPT OAuth: 使用 loginOpenAICodex (ChatGPT OAuth) 启动授权流程
 configRouter.post('/gpt-oauth/start', async (c) => {
   try {
-    const plugins = await getOpenClawPlugins();
-    const pluginId = resolveOpenAIPluginId(plugins);
-    if (!pluginId) {
-      return c.json(
-        {
-          success: false,
-          error: '未检测到 OpenAI 插件，请先安装 OpenAI 插件',
-        },
-        400
-      );
-    }
-
-    // 启用 OpenAI 插件
-    await execa('openclaw', ['plugins', 'enable', pluginId]);
-
+    const loginOpenAICodex = await getLoginOpenAICodex();
     const sessionId = randomUUID();
-    
-    // 启动 OAuth 登录子进程
-    const { spawn } = await import('child_process');
-    const childProcess = spawn('openclaw', ['models', 'auth', 'login', '--provider', 'openai', '--set-default'], {
-      cwd: process.env.HOME,
-      env: process.env,
-    });
-
-    let authUrl = '';
-    let output = '';
-
-    // 捕获输出以获取授权 URL
-    childProcess.stdout.on('data', (data) => {
-      const text = data.toString();
-      output += text;
-      
-      // 尝试提取授权 URL
-      const urlMatch = text.match(/https?:\/\/[^\s]+/);
-      if (urlMatch && !authUrl) {
-        authUrl = urlMatch[0];
-      }
-    });
-
-    childProcess.stderr.on('data', (data) => {
-      output += data.toString();
-    });
 
     const session: GptOAuthSession = {
       sessionId,
-      process: childProcess,
       status: 'pending',
       startedAt: Date.now(),
     };
-
     gptOAuthSessions.set(sessionId, session);
 
-    // 监听进程退出
-    childProcess.on('close', (code) => {
+    // 启动 ChatGPT OAuth 流程（异步，不 await）
+    loginOpenAICodex({
+      onAuth: (info: { url: string; instructions?: string }) => {
+        // 捕获授权 URL
+        const currentSession = gptOAuthSessions.get(sessionId);
+        if (currentSession) {
+          currentSession.authUrl = info.url;
+        }
+      },
+      onPrompt: async (prompt: { message: string }) => {
+        // 手动粘贴回调 URL 的 fallback（在浏览器回调失败时使用）
+        // 在 web UI 中暂不支持，返回空字符串等待浏览器回调
+        console.log('OpenAI OAuth prompt:', prompt.message);
+        return '';
+      },
+      onProgress: (msg: string) => {
+        console.log('OpenAI OAuth progress:', msg);
+      },
+    }).then(async (creds: any) => {
       const currentSession = gptOAuthSessions.get(sessionId);
       if (currentSession) {
-        if (code === 0) {
+        try {
+          // 写入凭据到 auth-profiles.json
+          writeOpenAICodexCredentials(creds);
+          // 设置默认模型
+          await applyOpenAICodexConfig();
           currentSession.status = 'success';
-        } else {
+          console.log('OpenAI Codex OAuth 认证成功');
+        } catch (err: any) {
           currentSession.status = 'error';
-          currentSession.error = `认证失败 (退出码: ${code})`;
+          currentSession.error = '保存凭据失败: ' + (err.message || '未知错误');
+          console.error('保存 OpenAI Codex 凭据失败:', err);
         }
       }
+    }).catch((err: any) => {
+      const currentSession = gptOAuthSessions.get(sessionId);
+      if (currentSession) {
+        currentSession.status = 'error';
+        currentSession.error = 'ChatGPT OAuth 失败: ' + (err.message || '未知错误');
+      }
+      console.error('OpenAI Codex OAuth 失败:', err);
     });
 
-    // 等待一下，尝试获取授权 URL
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    // 等待 onAuth 回调获取授权 URL
+    await new Promise(resolve => setTimeout(resolve, 3000));
+
+    const authUrl = session.authUrl || '';
+    if (!authUrl) {
+      // 如果还没拿到 URL，再等一下
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
 
     return c.json({
       success: true,
       data: {
         sessionId,
-        authUrl: authUrl || 'https://platform.openai.com/authorize',
-        message: '请在浏览器中完成授权',
+        authUrl: session.authUrl || 'https://chatgpt.com',
+        message: '请在浏览器中完成 ChatGPT 授权',
       },
     });
   } catch (error: any) {
@@ -539,9 +627,6 @@ configRouter.post('/gpt-oauth/poll', async (c) => {
     // 检查超时（5分钟）
     if (Date.now() - session.startedAt > 5 * 60 * 1000) {
       gptOAuthSessions.delete(sessionId);
-      try {
-        session.process.kill();
-      } catch {}
       return c.json({ success: false, error: '登录已超时，请重新开始' }, 400);
     }
 
@@ -611,6 +696,38 @@ configRouter.post('/qwen-oauth/poll', async (c) => {
   }
 });
 
+// 获取 Telegram 已有配置
+configRouter.get('/telegram', async (c) => {
+  try {
+    let botToken = '';
+    let userId = '';
+
+    try {
+      const { stdout } = await execa('openclaw', ['config', 'get', 'channels.telegram.botToken']);
+      botToken = stdout.trim().replace(/^"|"$/g, '');
+    } catch {}
+
+    try {
+      const { stdout } = await execa('openclaw', ['config', 'get', '--json', 'channels.telegram.allowFrom']);
+      const parsed = extractJson(stdout);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        userId = String(parsed[0]);
+      }
+    } catch {}
+
+    return c.json({
+      success: true,
+      data: {
+        configured: !!(botToken && userId),
+        botToken,
+        userId,
+      },
+    });
+  } catch (error: any) {
+    return c.json({ success: true, data: { configured: false, botToken: '', userId: '' } });
+  }
+});
+
 // 配置 Telegram
 configRouter.post('/telegram', async (c) => {
   try {
@@ -625,7 +742,7 @@ configRouter.post('/telegram', async (c) => {
     }
 
     // 配置 Telegram (新路径 channels.telegram)
-    await execa('openclaw', ['config', 'set', 'channels.telegram.botToken', token]);
+    await execa('openclaw', ['config', 'set', '--json', 'channels.telegram.botToken', JSON.stringify(token)]);
     await execa('openclaw', [
       'config',
       'set',
@@ -689,6 +806,14 @@ configRouter.get('/status', async (c) => {
       config.telegramConfigured = !!stdout.trim();
     } catch {
       config.telegramConfigured = false;
+    }
+
+    // 获取 Gateway Token
+    try {
+      const { stdout } = await execa('openclaw', ['config', 'get', 'gateway.auth.token']);
+      config.gatewayToken = stdout.trim() || null;
+    } catch {
+      config.gatewayToken = null;
     }
 
     // 检查 Gateway 状态

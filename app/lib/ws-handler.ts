@@ -43,10 +43,14 @@ function handleOAuthLogin(ws: import('ws').WebSocket) {
 
           // 确定命令
           let command: string
+          let ptyProvider: string
           if (provider === 'gpt') {
-            command = 'openclaw models auth login --provider openai --set-default'
+            // OpenAI Codex 使用 onboard 的 ChatGPT OAuth 流程
+            command = 'openclaw onboard --flow quickstart --auth-choice openai-codex --skip-channels --skip-skills --skip-health --skip-daemon --no-install-daemon --skip-ui'
+            ptyProvider = 'gpt'
           } else if (provider === 'qwen') {
             command = 'openclaw models auth login --provider qwen-portal --set-default'
+            ptyProvider = 'qwen'
           } else {
             ws.send(JSON.stringify({ type: 'error', message: '不支持的提供商' }))
             return
@@ -66,12 +70,9 @@ function handleOAuthLogin(ws: import('ws').WebSocket) {
           let shell: ReturnType<typeof pty.spawn> | undefined
 
           try {
-            const openclawPath = path.join(home, '.local/bin', 'openclaw')
-            const directOpenclaw = fs.existsSync(openclawPath)
-            const ptyFile = directOpenclaw ? openclawPath : shPath
-            const ptyArgs = directOpenclaw
-              ? ['models', 'auth', 'login', '--provider', provider, '--set-default']
-              : ['-lc', command]
+            // 统一使用 shell -lc 执行命令，确保正确解析 openclaw 路径和完整参数
+            const ptyFile = shPath
+            const ptyArgs = ['-lc', command]
 
             shell = pty.spawn(ptyFile, ptyArgs, {
               name: 'xterm-color',
@@ -117,12 +118,9 @@ function handleOAuthLogin(ws: import('ws').WebSocket) {
               TERM: process.env.TERM || 'xterm-256color',
             } as any
 
-            const openclawPath = path.join(home, '.local/bin', 'openclaw')
-            const directOpenclaw = fs.existsSync(openclawPath)
-            const fallbackFile = directOpenclaw ? openclawPath : shPath
-            const fallbackArgs = directOpenclaw
-              ? ['models', 'auth', 'login', '--provider', provider, '--set-default']
-              : ['-lc', command]
+            // 统一使用 shell 执行命令
+            const fallbackFile = shPath
+            const fallbackArgs = ['-lc', command]
 
             const scriptPath = '/usr/bin/script'
             const child = spawn(scriptPath, ['-q', '/dev/null', fallbackFile, ...fallbackArgs], {

@@ -1,5 +1,6 @@
 import { createRoute } from 'honox/factory'
-import { html } from 'hono/html'
+import { html, raw } from 'hono/html'
+import { modelAdderAlpine } from '../lib/alpine/model-adder'
 
 export default createRoute((c) => {
   return c.render(
@@ -48,16 +49,56 @@ export default createRoute((c) => {
                      hx-swap="innerHTML">
                   <p class="text-sm text-slate-400">加载中...</p>
                 </div>
-                <div class="mt-6 rounded-2xl border-2 border-dashed border-indigo-200 bg-indigo-50 px-6 py-5 text-center text-sm text-slate-600">
-                  <strong class="text-indigo-600">+ 添加新模型</strong>
-                  <p class="mt-2 text-xs">使用下方引导完成新增</p>
-                </div>
               </div>
-              <div class="mt-6 rounded-2xl border border-slate-200 bg-white p-6">
-                <h4 class="text-lg font-semibold text-slate-800">新增模型指引</h4>
-                <p class="mt-2 text-sm text-slate-500">返回配置助手完成 OAuth 或 API Key 登录。</p>
+
+              <!-- 新增模型 -->
+              <div class="mt-6 rounded-2xl border border-slate-200 bg-white p-6" x-data="modelAdder">
+
+                <!-- OAuth 弹窗 -->
+                <div x-show="oauth.show" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70">
+                  <div class="w-full max-w-2xl rounded-2xl bg-slate-900 text-slate-100 shadow-2xl">
+                    <div class="flex items-center justify-between border-b border-slate-700 px-5 py-3">
+                      <div class="text-sm" x-text="oauth.title"></div>
+                      <button class="text-xl text-slate-400 hover:text-white" @click="closeOAuth()">×</button>
+                    </div>
+                    <div class="max-h-[520px] overflow-y-auto px-5 py-4 font-mono text-sm">
+                      <div class="whitespace-pre-wrap" x-html="oauth.output"></div>
+                      <div class="mt-4 flex justify-end gap-2">
+                        <button x-show="oauth.showOpen" @click="window.open(oauth.openUrl,'_blank')" class="rounded-lg border border-slate-600 px-4 py-2 text-sm text-slate-200 hover:bg-slate-800">打开授权页面</button>
+                        <button x-show="oauth.showDone" @click="manualOAuthDone()" class="rounded-lg bg-indigo-500 px-4 py-2 text-sm text-white hover:bg-indigo-400">已完成登录</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Loading -->
+                <div x-show="loading" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40">
+                  <div class="rounded-2xl bg-white px-6 py-5 text-center shadow-xl">
+                    <div class="mx-auto mb-3 h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-t-indigo-500"></div>
+                    <p class="text-sm text-slate-600">正在配置中，请稍候...</p>
+                  </div>
+                </div>
+
+                <h4 class="text-lg font-semibold text-slate-800">新增模型</h4>
+                <p class="mt-2 text-sm text-slate-500">选择提供商，通过 OAuth 登录或填写 API Key 添加模型。</p>
+
                 <div class="mt-4">
-                  <a class="rounded-lg bg-indigo-500 px-4 py-2 text-sm text-white hover:bg-indigo-400" href="/">去配置助手</a>
+                  <label class="mb-2 block text-sm font-medium text-slate-600">选择模型提供商</label>
+                  <select x-model="provider" class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:border-indigo-400 focus:outline-none">
+                    <option value="">-- 请选择 --</option>
+                    <option value="minimax">MiniMax (需要 API Key)</option>
+                    <option value="gpt">GPT (通过 ChatGPT OAuth 登录)</option>
+                    <option value="qwen">千问 (通过 OAuth 登录)</option>
+                  </select>
+                </div>
+
+                <div x-show="provider === 'minimax'" x-cloak class="mt-4">
+                  <label class="mb-2 block text-sm font-medium text-slate-600">MiniMax API Key</label>
+                  <input type="text" x-model="minimaxToken" placeholder="请输入 MiniMax API Key" class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:border-indigo-400 focus:outline-none" />
+                </div>
+
+                <div class="mt-6 flex justify-end">
+                  <button @click="submitModel()" :disabled="!canSubmit" class="rounded-lg bg-indigo-500 px-5 py-2 text-sm text-white hover:bg-indigo-400 disabled:bg-slate-200 disabled:text-slate-400">添加模型</button>
                 </div>
               </div>
             </div>
@@ -129,6 +170,7 @@ export default createRoute((c) => {
         </div>
       </div>
     </div>
+    <script>${raw(modelAdderAlpine)}</script>
     `,
     { title: 'OpenClaw 配置指引' }
   )
