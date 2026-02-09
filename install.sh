@@ -695,19 +695,37 @@ manage_helper_service() {
             npm install
         fi
         
-        print_info "启动生产服务..."
+        print_info "构建并启动生产服务..."
         nohup npm start > /tmp/openclaw-helper.log 2>&1 &
-        print_info "✓ 服务已启动"
+        HELPER_PID=$!
     fi
     
-    sleep 2
+    # 等待服务启动(构建+启动可能需要较长时间)
+    print_info "等待 Helper 服务启动(最多等待 60 秒)..."
+    local MAX_WAIT=60
+    local WAIT_COUNT=0
+    local HELPER_STARTED=false
     
-    # 验证服务启动
-    if lsof -i :${HELPER_PORT} > /dev/null 2>&1; then
+    while [ $WAIT_COUNT -lt $MAX_WAIT ]; do
+        sleep 2
+        WAIT_COUNT=$((WAIT_COUNT + 2))
+        
+        # 检查端口是否监听
+        if lsof -i :${HELPER_PORT} > /dev/null 2>&1; then
+            HELPER_STARTED=true
+            break
+        fi
+        
+        echo -n "."
+    done
+    echo ""
+    
+    if [ "$HELPER_STARTED" = true ]; then
         print_info "✓ Helper 服务正在端口 ${HELPER_PORT} 上运行"
         print_info "✓ 访问地址: http://127.0.0.1:${HELPER_PORT}"
     else
         print_error "Helper 服务启动失败"
+        print_error "查看日志: cat /tmp/openclaw-helper.log"
         return 1
     fi
 }

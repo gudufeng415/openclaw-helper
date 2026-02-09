@@ -6,7 +6,7 @@
   "main": "server.node.ts",
   "scripts": {
     "dev": "npm run build:css && concurrently \"npm run watch:css\" \"vite\"",
-    "start": "npm run build:css && tsx server.node.ts",
+    "start": "npm run build && node dist/index.js",
     "build": "npm run build:css && vite build",
     "build:css": "tailwindcss -i ./app/style.css -o ./public/tailwind.css --minify",
     "watch:css": "tailwindcss -i ./app/style.css -o ./public/tailwind.css --watch",

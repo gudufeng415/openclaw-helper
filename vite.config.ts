@@ -13,6 +13,7 @@ export default defineConfig(({ mode }) => {
       honox(),
       build({
         entry: './app/server.ts',
+        port: 17543,
       }),
     ],
     server: {
