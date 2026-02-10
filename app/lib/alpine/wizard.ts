@@ -8,6 +8,11 @@ document.addEventListener('alpine:init', () => {
     step: 1,
     provider: '',
     minimaxToken: '',
+    customBaseUrl: '',
+    customApiKey: '',
+    customModelId: '',
+    customInputTypes: ['text'],
+    customSetDefault: false,
     tgToken: '',
     tgUserId: '',
     tgLoaded: false,
@@ -24,6 +29,7 @@ document.addEventListener('alpine:init', () => {
 
     get canStep1() {
       if (this.provider === 'minimax') return !!this.minimaxToken;
+      if (this.provider === 'custom') return !!this.customBaseUrl.trim() && !!this.customApiKey.trim() && !!this.customModelId.trim();
       return !!this.provider;
     },
     get canStep2() {
@@ -57,9 +63,19 @@ document.addEventListener('alpine:init', () => {
       if (!this.canStep1) return;
       this.loading = true;
       try {
+        const payload = { provider: this.provider, token: this.minimaxToken || undefined };
+        if (this.provider === 'custom') {
+          payload.custom = {
+            baseUrl: this.customBaseUrl.trim(),
+            apiKey: this.customApiKey.trim(),
+            modelId: this.customModelId.trim(),
+            inputTypes: this.customInputTypes.length > 0 ? this.customInputTypes : ['text'],
+            setDefault: this.customSetDefault
+          };
+        }
         const res = await fetch('/api/config/model', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ provider: this.provider, token: this.minimaxToken || undefined })
+          body: JSON.stringify(payload)
         });
         const result = await res.json();
         this.loading = false;

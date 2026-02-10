@@ -395,7 +395,7 @@ async function applyQwenConfig(resourceUrl?: string) {
 // 配置模型
 configRouter.post('/model', async (c) => {
   try {
-    const { provider, token } = await c.req.json();
+    const { provider, token, custom } = await c.req.json();
 
     if (!provider) {
       return c.json({ success: false, error: '请选择模型提供商' }, 400);
@@ -491,6 +491,93 @@ configRouter.post('/model', async (c) => {
           oauthMode: 'device',
         };
         break;
+
+      case 'custom': {
+        // 第三方模型（OpenAI 兼容 API）
+        if (!custom || !custom.baseUrl || !custom.apiKey || !custom.modelId) {
+          return c.json({ success: false, error: '请填写 API Base URL、API Key 和模型 ID' }, 400);
+        }
+
+        const {
+          baseUrl,
+          apiKey,
+          modelId,
+          inputTypes = ['text'],
+          setDefault = false,
+        } = custom;
+
+        // 从 Base URL 自动提取提供商名称
+        // 例如 https://gptproto.com/v1 -> gptproto
+        //      https://api.moonshot.ai/v1 -> moonshot
+        let providerName: string;
+        try {
+          const hostname = new URL(baseUrl).hostname; // e.g. "api.moonshot.ai"
+          const parts = hostname.split('.');
+          // 取主域名部分（去掉 api. 前缀和 .com/.ai 等后缀）
+          if (parts.length >= 2) {
+            providerName = parts.length > 2 ? parts[parts.length - 2] : parts[0];
+          } else {
+            providerName = parts[0];
+          }
+          providerName = providerName.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+        } catch {
+          return c.json({ success: false, error: 'API Base URL 格式不正确' }, 400);
+        }
+
+        if (!providerName) {
+          return c.json({ success: false, error: '无法从 URL 中提取提供商名称，请检查 API Base URL' }, 400);
+        }
+
+        const modelKey = `${providerName}/${modelId}`;
+
+        // 配置第三方提供商（使用 OpenAI 兼容 API）
+        await execa('openclaw', [
+          'config',
+          'set',
+          '--json',
+          `models.providers.${providerName}`,
+          JSON.stringify({
+            baseUrl,
+            apiKey,
+            api: 'openai-completions',
+            models: [
+              {
+                id: modelId,
+                name: modelId,
+                reasoning: false,
+                input: Array.isArray(inputTypes) && inputTypes.length > 0 ? inputTypes : ['text'],
+                cost: {
+                  input: 0,
+                  output: 0,
+                  cacheRead: 0,
+                  cacheWrite: 0,
+                },
+                contextWindow: 200000,
+                maxTokens: 8192,
+              },
+            ],
+          }),
+        ]);
+
+        // 将模型注册到 agents.defaults.models
+        await mergeDefaultModels({
+          [modelKey]: {},
+        });
+
+        // 如果勾选了设为默认，则更新默认模型
+        if (setDefault) {
+          await execa('openclaw', [
+            'config',
+            'set',
+            '--json',
+            'agents.defaults.model',
+            JSON.stringify({ primary: modelKey }),
+          ]);
+        }
+
+        result = { provider: providerName, model: modelId };
+        break;
+      }
 
       default:
         return c.json({ success: false, error: '不支持的模型提供商' }, 400);

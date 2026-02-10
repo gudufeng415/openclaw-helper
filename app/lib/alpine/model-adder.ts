@@ -7,6 +7,11 @@ document.addEventListener('alpine:init', () => {
   Alpine.data('modelAdder', () => ({
     provider: '',
     minimaxToken: '',
+    customBaseUrl: '',
+    customApiKey: '',
+    customModelId: '',
+    customInputTypes: ['text'],
+    customSetDefault: false,
     loading: false,
     alert: null,
     _alertTimer: null,
@@ -14,6 +19,7 @@ document.addEventListener('alpine:init', () => {
 
     get canSubmit() {
       if (this.provider === 'minimax') return !!this.minimaxToken;
+      if (this.provider === 'custom') return !!this.customBaseUrl.trim() && !!this.customApiKey.trim() && !!this.customModelId.trim();
       return !!this.provider;
     },
 
@@ -34,6 +40,11 @@ document.addEventListener('alpine:init', () => {
       this.showAlert('success', '模型配置成功！');
       this.provider = '';
       this.minimaxToken = '';
+      this.customBaseUrl = '';
+      this.customApiKey = '';
+      this.customModelId = '';
+      this.customInputTypes = ['text'];
+      this.customSetDefault = false;
       // 刷新模型列表
       htmx.ajax('GET', '/api/partials/models', { target: '#model-list', swap: 'innerHTML' });
     },
@@ -42,9 +53,19 @@ document.addEventListener('alpine:init', () => {
       if (!this.canSubmit) return;
       this.loading = true;
       try {
+        const payload = { provider: this.provider, token: this.minimaxToken || undefined };
+        if (this.provider === 'custom') {
+          payload.custom = {
+            baseUrl: this.customBaseUrl.trim(),
+            apiKey: this.customApiKey.trim(),
+            modelId: this.customModelId.trim(),
+            inputTypes: this.customInputTypes.length > 0 ? this.customInputTypes : ['text'],
+            setDefault: this.customSetDefault
+          };
+        }
         const res = await fetch('/api/config/model', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ provider: this.provider, token: this.minimaxToken || undefined })
+          body: JSON.stringify(payload)
         });
         const result = await res.json();
         this.loading = false;

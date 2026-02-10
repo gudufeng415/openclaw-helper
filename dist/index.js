@@ -24,8 +24,8 @@ import { join } from "path";
 import { versions } from "process";
 import { Readable } from "stream";
 import { WebSocketServer } from "ws";
-import { AsyncLocalStorage } from "node:async_hooks";
 import { execa } from "execa";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID, randomBytes, createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -4046,6 +4046,11 @@ document.addEventListener('alpine:init', () => {
   Alpine.data('modelAdder', () => ({
     provider: '',
     minimaxToken: '',
+    customBaseUrl: '',
+    customApiKey: '',
+    customModelId: '',
+    customInputTypes: ['text'],
+    customSetDefault: false,
     loading: false,
     alert: null,
     _alertTimer: null,
@@ -4053,6 +4058,7 @@ document.addEventListener('alpine:init', () => {
 
     get canSubmit() {
       if (this.provider === 'minimax') return !!this.minimaxToken;
+      if (this.provider === 'custom') return !!this.customBaseUrl.trim() && !!this.customApiKey.trim() && !!this.customModelId.trim();
       return !!this.provider;
     },
 
@@ -4073,6 +4079,11 @@ document.addEventListener('alpine:init', () => {
       this.showAlert('success', '模型配置成功！');
       this.provider = '';
       this.minimaxToken = '';
+      this.customBaseUrl = '';
+      this.customApiKey = '';
+      this.customModelId = '';
+      this.customInputTypes = ['text'];
+      this.customSetDefault = false;
       // 刷新模型列表
       htmx.ajax('GET', '/api/partials/models', { target: '#model-list', swap: 'innerHTML' });
     },
@@ -4081,9 +4092,19 @@ document.addEventListener('alpine:init', () => {
       if (!this.canSubmit) return;
       this.loading = true;
       try {
+        const payload = { provider: this.provider, token: this.minimaxToken || undefined };
+        if (this.provider === 'custom') {
+          payload.custom = {
+            baseUrl: this.customBaseUrl.trim(),
+            apiKey: this.customApiKey.trim(),
+            modelId: this.customModelId.trim(),
+            inputTypes: this.customInputTypes.length > 0 ? this.customInputTypes : ['text'],
+            setDefault: this.customSetDefault
+          };
+        }
         const res = await fetch('/api/config/model', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ provider: this.provider, token: this.minimaxToken || undefined })
+          body: JSON.stringify(payload)
         });
         const result = await res.json();
         this.loading = false;
@@ -4293,11 +4314,68 @@ document.addEventListener('alpine:init', () => {
   }))
 })
 `;
+function stripAnsi(str) {
+  return str.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, "");
+}
+function extractPlainValue(stdout) {
+  const clean = stripAnsi(stdout);
+  const lines = clean.split("\n").map((l) => l.trim()).filter(Boolean);
+  return lines.length ? lines[lines.length - 1] : "";
+}
+function extractJson(stdout) {
+  const clean = stripAnsi(stdout);
+  const start = clean.indexOf("{");
+  const end = clean.lastIndexOf("}");
+  if (start === -1 || end === -1 || end <= start) return null;
+  try {
+    return JSON.parse(clean.slice(start, end + 1));
+  } catch {
+    return null;
+  }
+}
+async function getOpenClawStatus() {
+  const status = {
+    defaultModel: null,
+    telegramConfigured: false,
+    gatewayRunning: false,
+    gatewayToken: null
+  };
+  try {
+    const { stdout } = await execa("openclaw", ["config", "get", "agents.defaults.model.primary"]);
+    status.defaultModel = extractPlainValue(stdout);
+  } catch {
+    status.defaultModel = null;
+  }
+  try {
+    const { stdout } = await execa("openclaw", ["config", "get", "channels.telegram.botToken"]);
+    status.telegramConfigured = !!extractPlainValue(stdout);
+  } catch {
+    status.telegramConfigured = false;
+  }
+  try {
+    const { stdout } = await execa("openclaw", ["config", "get", "gateway.auth.token"]);
+    status.gatewayToken = extractPlainValue(stdout) || null;
+  } catch {
+    status.gatewayToken = null;
+  }
+  try {
+    await execa("pgrep", ["-f", "openclaw.*gateway"]);
+    status.gatewayRunning = true;
+  } catch {
+    status.gatewayRunning = false;
+  }
+  return status;
+}
 var __freeze$1 = Object.freeze;
 var __defProp$1 = Object.defineProperty;
 var __template$1 = (cooked, raw2) => __freeze$1(__defProp$1(cooked, "raw", { value: __freeze$1(cooked.slice()) }));
 var _a$1;
-const config = createRoute((c) => {
+const config = createRoute(async (c) => {
+  const status = await getOpenClawStatus();
+  let openClawUrl = "http://127.0.0.1:18789";
+  if (status.gatewayToken) {
+    openClawUrl += `?token=${encodeURIComponent(status.gatewayToken)}`;
+  }
   return c.render(
     html(_a$1 || (_a$1 = __template$1([`
     <div x-data="{ tab: 'models', alert: null, _t: null }"
@@ -4325,7 +4403,7 @@ const config = createRoute((c) => {
                 <h1 class="text-2xl font-semibold text-slate-800">配置中心</h1>
                 <p class="mt-1 text-sm text-slate-500">集中管理模型、渠道、技能与远程支持</p>
               </div>
-              <a class="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-100" href="/">返回配置助手</a>
+              `, `
             </div>
 
             <!-- 全局提示 -->
@@ -4384,12 +4462,46 @@ const config = createRoute((c) => {
                     <option value="minimax">MiniMax (需要 API Key)</option>
                     <option value="gpt">GPT (通过 ChatGPT OAuth 登录)</option>
                     <option value="qwen">千问 (通过 OAuth 登录)</option>
+                    <option value="custom">第三方模型 (OpenAI 兼容 API)</option>
                   </select>
                 </div>
 
                 <div x-show="provider === 'minimax'" x-cloak class="mt-4">
                   <label class="mb-2 block text-sm font-medium text-slate-600">MiniMax API Key</label>
                   <input type="text" x-model="minimaxToken" placeholder="请输入 MiniMax API Key" class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:border-indigo-400 focus:outline-none" />
+                </div>
+
+                <!-- 第三方模型表单 -->
+                <div x-show="provider === 'custom'" x-cloak class="mt-4 space-y-4">
+                  <div class="rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3">
+                    <p class="text-sm text-blue-700">支持任何兼容 OpenAI Chat Completions API 的第三方服务，例如 Gemini、Moonshot、DeepSeek 等。</p>
+                  </div>
+                  <div>
+                    <label class="mb-2 block text-sm font-medium text-slate-600">API Base URL <span class="text-red-400">*</span></label>
+                    <input type="text" x-model="customBaseUrl" placeholder="例如：https://gptproto.com/v1" class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:border-indigo-400 focus:outline-none" />
+                  </div>
+                  <div>
+                    <label class="mb-2 block text-sm font-medium text-slate-600">API Key <span class="text-red-400">*</span></label>
+                    <input type="password" x-model="customApiKey" placeholder="请输入 API Key" class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:border-indigo-400 focus:outline-none" />
+                  </div>
+                  <div>
+                    <label class="mb-2 block text-sm font-medium text-slate-600">模型 ID <span class="text-red-400">*</span></label>
+                    <input type="text" x-model="customModelId" placeholder="例如：gemini-3-pro-preview、deepseek-chat" class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:border-indigo-400 focus:outline-none" />
+                  </div>
+                  <div>
+                    <label class="mb-2 block text-sm font-medium text-slate-600">支持的输入类型</label>
+                    <div class="flex flex-wrap gap-4 mt-2">
+                      <label class="flex items-center gap-1.5 text-sm text-slate-600"><input type="checkbox" value="text" x-model="customInputTypes" class="rounded" /> 文本</label>
+                      <label class="flex items-center gap-1.5 text-sm text-slate-600"><input type="checkbox" value="image" x-model="customInputTypes" class="rounded" /> 图片</label>
+                      <label class="flex items-center gap-1.5 text-sm text-slate-600"><input type="checkbox" value="audio" x-model="customInputTypes" class="rounded" /> 音频</label>
+                    </div>
+                  </div>
+                  <div>
+                    <label class="flex items-center gap-2 text-sm text-slate-600">
+                      <input type="checkbox" x-model="customSetDefault" class="rounded" />
+                      设为默认模型
+                    </label>
+                  </div>
                 </div>
 
                 <div class="mt-6 flex justify-end">
@@ -4465,7 +4577,17 @@ const config = createRoute((c) => {
         </div>
       </div>
     </div>
-    <script>`, "<\/script>\n    <script>", "<\/script>\n    "])), raw(modelAdderAlpine), raw(whatsappLinkerAlpine)),
+    <script>`, "<\/script>\n    <script>", "<\/script>\n    "])), status.defaultModel && status.telegramConfigured ? html`
+                <a class="rounded-lg bg-indigo-500 px-6 py-2.5 text-sm font-semibold text-white hover:bg-indigo-400 shadow-lg shadow-indigo-500/30 transition-all hover:-translate-y-0.5 flex items-center gap-2" href="${openClawUrl}" target="_blank">
+                  <span>打开 OpenClaw 页面</span>
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4">
+                    <path fill-rule="evenodd" d="M4.25 5.5a.75.75 0 00-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 00.75-.75v-4a.75.75 0 011.5 0v4A2.25 2.25 0 0112.75 17h-8.5A2.25 2.25 0 012 14.75v-8.5A2.25 2.25 0 014.25 4h5a.75.75 0 010 1.5h-5z" clip-rule="evenodd" />
+                    <path fill-rule="evenodd" d="M6.194 12.753a.75.75 0 001.06.053L16.5 4.44v2.81a.75.75 0 001.5 0v-4.5a.75.75 0 00-.75-.75h-4.5a.75.75 0 000 1.5h2.553l-9.056 8.194a.75.75 0 00-.053 1.06z" clip-rule="evenodd" />
+                  </svg>
+                </a>
+              ` : html`
+                <a class="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-100" href="/">返回配置助手</a>
+              `, raw(modelAdderAlpine), raw(whatsappLinkerAlpine)),
     { title: "OpenClaw 配置指引" }
   );
 });
@@ -4553,6 +4675,11 @@ document.addEventListener('alpine:init', () => {
     step: 1,
     provider: '',
     minimaxToken: '',
+    customBaseUrl: '',
+    customApiKey: '',
+    customModelId: '',
+    customInputTypes: ['text'],
+    customSetDefault: false,
     tgToken: '',
     tgUserId: '',
     tgLoaded: false,
@@ -4569,6 +4696,7 @@ document.addEventListener('alpine:init', () => {
 
     get canStep1() {
       if (this.provider === 'minimax') return !!this.minimaxToken;
+      if (this.provider === 'custom') return !!this.customBaseUrl.trim() && !!this.customApiKey.trim() && !!this.customModelId.trim();
       return !!this.provider;
     },
     get canStep2() {
@@ -4602,9 +4730,19 @@ document.addEventListener('alpine:init', () => {
       if (!this.canStep1) return;
       this.loading = true;
       try {
+        const payload = { provider: this.provider, token: this.minimaxToken || undefined };
+        if (this.provider === 'custom') {
+          payload.custom = {
+            baseUrl: this.customBaseUrl.trim(),
+            apiKey: this.customApiKey.trim(),
+            modelId: this.customModelId.trim(),
+            inputTypes: this.customInputTypes.length > 0 ? this.customInputTypes : ['text'],
+            setDefault: this.customSetDefault
+          };
+        }
         const res = await fetch('/api/config/model', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ provider: this.provider, token: this.minimaxToken || undefined })
+          body: JSON.stringify(payload)
         });
         const result = await res.json();
         this.loading = false;
@@ -4756,7 +4894,11 @@ var __freeze = Object.freeze;
 var __defProp2 = Object.defineProperty;
 var __template = (cooked, raw2) => __freeze(__defProp2(cooked, "raw", { value: __freeze(cooked.slice()) }));
 var _a;
-const index = createRoute((c) => {
+const index = createRoute(async (c) => {
+  const status = await getOpenClawStatus();
+  if (status.defaultModel && status.telegramConfigured) {
+    return c.redirect("/config");
+  }
   const tgGuide = TelegramGuide({ withTokenInput: true, alpineTokenModel: "tgToken" });
   return c.render(
     html(_a || (_a = __template([`
@@ -4823,11 +4965,44 @@ const index = createRoute((c) => {
                 <option value="minimax">MiniMax (需要 API Key)</option>
                 <option value="gpt">GPT (通过 OAuth 登录)</option>
                 <option value="qwen">千问 (通过 OAuth 登录)</option>
+                <option value="custom">第三方模型 (OpenAI 兼容 API)</option>
               </select>
             </div>
             <div x-show="provider === 'minimax'" x-cloak class="mt-6">
               <label class="mb-2 block text-sm font-medium text-slate-600">MiniMax API Key</label>
               <input type="text" x-model="minimaxToken" placeholder="请输入 MiniMax API Key" class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:border-indigo-400 focus:outline-none" />
+            </div>
+            <!-- 第三方模型表单 -->
+            <div x-show="provider === 'custom'" x-cloak class="mt-6 space-y-4">
+              <div class="rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3">
+                <p class="text-sm text-blue-700">支持任何兼容 OpenAI Chat Completions API 的第三方服务，例如 Gemini、Moonshot、DeepSeek 等。</p>
+              </div>
+              <div>
+                <label class="mb-2 block text-sm font-medium text-slate-600">API Base URL <span class="text-red-400">*</span></label>
+                <input type="text" x-model="customBaseUrl" placeholder="例如：https://gptproto.com/v1" class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:border-indigo-400 focus:outline-none" />
+              </div>
+              <div>
+                <label class="mb-2 block text-sm font-medium text-slate-600">API Key <span class="text-red-400">*</span></label>
+                <input type="password" x-model="customApiKey" placeholder="请输入 API Key" class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:border-indigo-400 focus:outline-none" />
+              </div>
+              <div>
+                <label class="mb-2 block text-sm font-medium text-slate-600">模型 ID <span class="text-red-400">*</span></label>
+                <input type="text" x-model="customModelId" placeholder="例如：gemini-3-pro-preview、deepseek-chat" class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:border-indigo-400 focus:outline-none" />
+              </div>
+              <div>
+                <label class="mb-2 block text-sm font-medium text-slate-600">支持的输入类型</label>
+                <div class="flex flex-wrap gap-4 mt-2">
+                  <label class="flex items-center gap-1.5 text-sm text-slate-600"><input type="checkbox" value="text" x-model="customInputTypes" class="rounded" /> 文本</label>
+                  <label class="flex items-center gap-1.5 text-sm text-slate-600"><input type="checkbox" value="image" x-model="customInputTypes" class="rounded" /> 图片</label>
+                  <label class="flex items-center gap-1.5 text-sm text-slate-600"><input type="checkbox" value="audio" x-model="customInputTypes" class="rounded" /> 音频</label>
+                </div>
+              </div>
+              <div>
+                <label class="flex items-center gap-2 text-sm text-slate-600">
+                  <input type="checkbox" x-model="customSetDefault" class="rounded" />
+                  设为默认模型
+                </label>
+              </div>
             </div>
             <div class="mt-8 flex justify-end">
               <button @click="submitStep1()" :disabled="!canStep1" class="rounded-lg bg-indigo-500 px-5 py-2 text-sm text-white hover:bg-indigo-400 disabled:bg-slate-200 disabled:text-slate-400">下一步</button>
@@ -5330,25 +5505,6 @@ var cors = (options) => {
     }
   };
 };
-function stripAnsi(str) {
-  return str.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, "");
-}
-function extractPlainValue(stdout) {
-  const clean = stripAnsi(stdout);
-  const lines = clean.split("\n").map((l) => l.trim()).filter(Boolean);
-  return lines.length ? lines[lines.length - 1] : "";
-}
-function extractJson(stdout) {
-  const clean = stripAnsi(stdout);
-  const start = clean.indexOf("{");
-  const end = clean.lastIndexOf("}");
-  if (start === -1 || end === -1 || end <= start) return null;
-  try {
-    return JSON.parse(clean.slice(start, end + 1));
-  } catch {
-    return null;
-  }
-}
 async function callGatewayMethod(method, params = {}, timeoutMs = 6e4) {
   try {
     const { stdout } = await execa("openclaw", [
@@ -5674,7 +5830,7 @@ async function applyQwenConfig(resourceUrl) {
 }
 configRouter.post("/model", async (c) => {
   try {
-    const { provider, token } = await c.req.json();
+    const { provider, token, custom } = await c.req.json();
     if (!provider) {
       return c.json({ success: false, error: "请选择模型提供商" }, 400);
     }
@@ -5749,6 +5905,76 @@ configRouter.post("/model", async (c) => {
           oauthMode: "device"
         };
         break;
+      case "custom": {
+        if (!custom || !custom.baseUrl || !custom.apiKey || !custom.modelId) {
+          return c.json({ success: false, error: "请填写 API Base URL、API Key 和模型 ID" }, 400);
+        }
+        const {
+          baseUrl,
+          apiKey,
+          modelId,
+          inputTypes = ["text"],
+          setDefault = false
+        } = custom;
+        let providerName;
+        try {
+          const hostname = new URL(baseUrl).hostname;
+          const parts = hostname.split(".");
+          if (parts.length >= 2) {
+            providerName = parts.length > 2 ? parts[parts.length - 2] : parts[0];
+          } else {
+            providerName = parts[0];
+          }
+          providerName = providerName.toLowerCase().replace(/[^a-z0-9-]/g, "-");
+        } catch {
+          return c.json({ success: false, error: "API Base URL 格式不正确" }, 400);
+        }
+        if (!providerName) {
+          return c.json({ success: false, error: "无法从 URL 中提取提供商名称，请检查 API Base URL" }, 400);
+        }
+        const modelKey = `${providerName}/${modelId}`;
+        await execa("openclaw", [
+          "config",
+          "set",
+          "--json",
+          `models.providers.${providerName}`,
+          JSON.stringify({
+            baseUrl,
+            apiKey,
+            api: "openai-completions",
+            models: [
+              {
+                id: modelId,
+                name: modelId,
+                reasoning: false,
+                input: Array.isArray(inputTypes) && inputTypes.length > 0 ? inputTypes : ["text"],
+                cost: {
+                  input: 0,
+                  output: 0,
+                  cacheRead: 0,
+                  cacheWrite: 0
+                },
+                contextWindow: 2e5,
+                maxTokens: 8192
+              }
+            ]
+          })
+        ]);
+        await mergeDefaultModels({
+          [modelKey]: {}
+        });
+        if (setDefault) {
+          await execa("openclaw", [
+            "config",
+            "set",
+            "--json",
+            "agents.defaults.model",
+            JSON.stringify({ primary: modelKey })
+          ]);
+        }
+        result = { provider: providerName, model: modelId };
+        break;
+      }
       default:
         return c.json({ success: false, error: "不支持的模型提供商" }, 400);
     }
@@ -6013,31 +6239,7 @@ configRouter.post("/telegram", async (c) => {
 });
 configRouter.get("/status", async (c) => {
   try {
-    const config2 = {};
-    try {
-      const { stdout } = await execa("openclaw", ["config", "get", "agents.defaults.model.primary"]);
-      config2.defaultModel = extractPlainValue(stdout);
-    } catch {
-      config2.defaultModel = null;
-    }
-    try {
-      const { stdout } = await execa("openclaw", ["config", "get", "channels.telegram.botToken"]);
-      config2.telegramConfigured = !!extractPlainValue(stdout);
-    } catch {
-      config2.telegramConfigured = false;
-    }
-    try {
-      const { stdout } = await execa("openclaw", ["config", "get", "gateway.auth.token"]);
-      config2.gatewayToken = extractPlainValue(stdout) || null;
-    } catch {
-      config2.gatewayToken = null;
-    }
-    try {
-      await execa("pgrep", ["-f", "openclaw.*gateway"]);
-      config2.gatewayRunning = true;
-    } catch {
-      config2.gatewayRunning = false;
-    }
+    const config2 = await getOpenClawStatus();
     return c.json({ success: true, data: config2 });
   } catch (error) {
     console.error("获取状态失败:", error);

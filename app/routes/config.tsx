@@ -107,12 +107,46 @@ export default createRoute(async (c) => {
                     <option value="minimax">MiniMax (需要 API Key)</option>
                     <option value="gpt">GPT (通过 ChatGPT OAuth 登录)</option>
                     <option value="qwen">千问 (通过 OAuth 登录)</option>
+                    <option value="custom">第三方模型 (OpenAI 兼容 API)</option>
                   </select>
                 </div>
 
                 <div x-show="provider === 'minimax'" x-cloak class="mt-4">
                   <label class="mb-2 block text-sm font-medium text-slate-600">MiniMax API Key</label>
                   <input type="text" x-model="minimaxToken" placeholder="请输入 MiniMax API Key" class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:border-indigo-400 focus:outline-none" />
+                </div>
+
+                <!-- 第三方模型表单 -->
+                <div x-show="provider === 'custom'" x-cloak class="mt-4 space-y-4">
+                  <div class="rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3">
+                    <p class="text-sm text-blue-700">支持任何兼容 OpenAI Chat Completions API 的第三方服务，例如 Gemini、Moonshot、DeepSeek 等。</p>
+                  </div>
+                  <div>
+                    <label class="mb-2 block text-sm font-medium text-slate-600">API Base URL <span class="text-red-400">*</span></label>
+                    <input type="text" x-model="customBaseUrl" placeholder="例如：https://gptproto.com/v1" class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:border-indigo-400 focus:outline-none" />
+                  </div>
+                  <div>
+                    <label class="mb-2 block text-sm font-medium text-slate-600">API Key <span class="text-red-400">*</span></label>
+                    <input type="password" x-model="customApiKey" placeholder="请输入 API Key" class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:border-indigo-400 focus:outline-none" />
+                  </div>
+                  <div>
+                    <label class="mb-2 block text-sm font-medium text-slate-600">模型 ID <span class="text-red-400">*</span></label>
+                    <input type="text" x-model="customModelId" placeholder="例如：gemini-3-pro-preview、deepseek-chat" class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:border-indigo-400 focus:outline-none" />
+                  </div>
+                  <div>
+                    <label class="mb-2 block text-sm font-medium text-slate-600">支持的输入类型</label>
+                    <div class="flex flex-wrap gap-4 mt-2">
+                      <label class="flex items-center gap-1.5 text-sm text-slate-600"><input type="checkbox" value="text" x-model="customInputTypes" class="rounded" /> 文本</label>
+                      <label class="flex items-center gap-1.5 text-sm text-slate-600"><input type="checkbox" value="image" x-model="customInputTypes" class="rounded" /> 图片</label>
+                      <label class="flex items-center gap-1.5 text-sm text-slate-600"><input type="checkbox" value="audio" x-model="customInputTypes" class="rounded" /> 音频</label>
+                    </div>
+                  </div>
+                  <div>
+                    <label class="flex items-center gap-2 text-sm text-slate-600">
+                      <input type="checkbox" x-model="customSetDefault" class="rounded" />
+                      设为默认模型
+                    </label>
+                  </div>
                 </div>
 
                 <div class="mt-6 flex justify-end">
