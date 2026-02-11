@@ -113,7 +113,17 @@ check_and_install_homebrew() {
     fi
     
     print_warning "未检测到 Homebrew,开始安装..."
-    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    if [ -t 0 ]; then
+        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    else
+        # 如果是管道运行，尝试从 /dev/tty 读取输入
+        if [ -e /dev/tty ]; then
+            /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" < /dev/tty
+        else
+            print_error "无法进行交互式安装（未找到 tty），请尝试下载脚本后执行：Download install.sh and run: bash install.sh"
+            exit 1
+        fi
+    fi
     
     # 配置 Homebrew 环境变量
     if [[ $(uname -m) == 'arm64' ]]; then
