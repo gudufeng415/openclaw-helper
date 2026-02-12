@@ -20,14 +20,15 @@ export default createRoute(async (c) => {
         <div class="mx-auto grid w-full max-w-7xl grid-cols-1 gap-6 lg:grid-cols-[260px_1fr]">
 
           <!-- 侧边栏 -->
-          <aside class="rounded-2xl bg-slate-900/80 p-6 text-slate-200 shadow-xl">
-            <div class="text-sm font-semibold text-white">OpenClaw 控制台</div>
-            <div class="mt-1 text-xs text-slate-400">更多配置指引</div>
+          <aside class="sticky top-6 h-fit rounded-3xl border border-indigo-300/30 bg-gradient-to-b from-slate-900 via-slate-900 to-indigo-950 p-6 text-slate-200 shadow-2xl shadow-indigo-900/20">
+            <div class="text-base font-semibold tracking-wide text-white">OpenClaw 控制台</div>
+            <div class="mt-1 text-xs text-indigo-200/80">更多配置指引</div>
+            <div class="mt-4 h-px bg-gradient-to-r from-indigo-400/50 to-transparent"></div>
             <div class="mt-6 flex flex-col gap-2">
-              <button @click="tab='models'" :class="tab==='models' ? 'bg-slate-800 text-white' : 'text-slate-300'" class="rounded-lg px-3 py-2 text-left text-sm">模型</button>
-              <button @click="tab='channels'" :class="tab==='channels' ? 'bg-slate-800 text-white' : 'text-slate-300'" class="rounded-lg px-3 py-2 text-left text-sm">渠道</button>
-              <button @click="tab='skills'" :class="tab==='skills' ? 'bg-slate-800 text-white' : 'text-slate-300'" class="rounded-lg px-3 py-2 text-left text-sm">技能</button>
-              <button @click="tab='remote'" :class="tab==='remote' ? 'bg-slate-800 text-white' : 'text-slate-300'" class="rounded-lg px-3 py-2 text-left text-sm">远程支持</button>
+              <button @click="tab='models'" :class="tab==='models' ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/30 border-indigo-300/60 -translate-y-0.5' : 'text-slate-200/90 border-transparent hover:bg-slate-800/70 hover:text-white'" class="rounded-xl border px-4 py-3 text-left text-sm font-medium transition-all">模型</button>
+              <button @click="tab='channels'" :class="tab==='channels' ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/30 border-indigo-300/60 -translate-y-0.5' : 'text-slate-200/90 border-transparent hover:bg-slate-800/70 hover:text-white'" class="rounded-xl border px-4 py-3 text-left text-sm font-medium transition-all">渠道</button>
+              <button @click="tab='skills'" :class="tab==='skills' ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/30 border-indigo-300/60 -translate-y-0.5' : 'text-slate-200/90 border-transparent hover:bg-slate-800/70 hover:text-white'" class="rounded-xl border px-4 py-3 text-left text-sm font-medium transition-all">技能</button>
+              <button @click="tab='remote'" :class="tab==='remote' ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/30 border-indigo-300/60 -translate-y-0.5' : 'text-slate-200/90 border-transparent hover:bg-slate-800/70 hover:text-white'" class="rounded-xl border px-4 py-3 text-left text-sm font-medium transition-all">远程支持</button>
             </div>
           </aside>
 

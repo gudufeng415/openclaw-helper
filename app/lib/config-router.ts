@@ -363,6 +363,44 @@ function resolveRemoteSupportPath() {
   return path.join(home, '.openclaw-helper', 'remote-support.json');
 }
 
+async function isWhatsAppPluginEnabled(): Promise<boolean> {
+  try {
+    const { stdout } = await execa('openclaw', ['plugins', 'list']);
+    return /\|\s*@openclaw\/whatsapp\s*\|\s*whatsapp\s*\|\s*(loaded|enabled)\s*\|/i.test(stdout);
+  } catch {
+    return false;
+  }
+}
+
+async function ensureWhatsAppPluginReady() {
+  const enabled = await isWhatsAppPluginEnabled();
+  if (enabled) return;
+
+  console.log('WhatsApp: 插件未启用，正在自动启用...');
+  await execa('openclaw', ['plugins', 'enable', 'whatsapp']);
+
+  // 启用插件后重启网关，让 web login provider 立即生效
+  try {
+    await execa('openclaw', ['gateway', 'restart']);
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+  } catch {
+    // 如果 gateway restart 不可用，回退到手动重启
+    try {
+      await execa('pkill', ['-f', 'openclaw.*gateway']);
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    } catch {
+      // 进程可能不存在，忽略
+    }
+
+    const logFile = `${process.env.HOME}/.openclaw/logs/gateway.log`;
+    execa('sh', [
+      '-c',
+      `nohup openclaw gateway run --bind loopback --port 18789 > ${logFile} 2>&1 &`,
+    ]);
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+  }
+}
+
 // extractJson 和 extractPlainValue 从 ./utils 导入（会自动剥离 ANSI 转义码）
 
 /**
@@ -1065,6 +1103,9 @@ configRouter.get('/channels', async (c) => {
 // WhatsApp QR 链接: 启动（先注销旧会话，再获取二维码）
 configRouter.post('/whatsapp/link/start', async (c) => {
   try {
+    // 0. 启动前检查插件，未启用则自动开启
+    await ensureWhatsAppPluginReady();
+
     // 1. 先注销旧的 WhatsApp 会话（清除凭据），忽略错误（可能本来就没有会话）
     try {
       console.log('WhatsApp: 正在注销旧会话...');
@@ -1121,11 +1162,27 @@ configRouter.post('/whatsapp/link/poll', async (c) => {
       },
       15000,
     );
+
+    const connected = !!result.connected;
+    const message = String(result.message || '');
+
+    // 一些网关版本在登录失败时仍返回成功响应，但 message 会带失败原因
+    // 避免前端一直“连接中”直到超时
+    if (!connected && /failed|error|timeout|time-out|unauthorized|restart required/i.test(message)) {
+      return c.json(
+        {
+          success: false,
+          error: message || 'WhatsApp 登录失败，请重试',
+        },
+        500,
+      );
+    }
+
     return c.json({
       success: true,
       data: {
-        connected: !!result.connected,
-        message: result.message || '',
+        connected,
+        message,
       },
     });
   } catch (error: any) {
